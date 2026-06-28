@@ -1,0 +1,16 @@
+{
+  "name": "score-keeper",
+  "version": "1.0.0",
+  "description": "FTC-style custom robotics scorekeeper — local network web app",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.0.0",
+    "cookie-parser": "^1.4.6",
+    "express": "^4.18.2",
+    "express-session": "^1.17.3",
+    "socket.io": "^4.7.2"
+  }
+}

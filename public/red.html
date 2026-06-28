@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Red Scorer — Score Keeper</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    body { background: var(--red-bg); }
+    .scorer-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0.6rem 1rem; background: #110000;
+      border-bottom: 2px solid var(--red); position: sticky; top: 0; z-index: 100;
+    }
+    .scorer-title { font-size: 1.2rem; font-weight: 900; color: var(--red-light); letter-spacing: 0.1em; }
+    .timer-compact { font-size: 1.8rem; font-weight: 900; color: var(--timer-normal); font-variant-numeric: tabular-nums; }
+    .period-compact { font-size: 0.8rem; color: var(--text2); text-transform: uppercase; letter-spacing: 0.08em; }
+    .timer-info { text-align: center; }
+    .score-panel { padding: 0.75rem 1rem; }
+    .section-heading {
+      font-size: 0.75rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.1em; color: var(--text2); margin-bottom: 0.75rem;
+      padding-bottom: 0.4rem; border-bottom: 1px solid var(--border);
+    }
+    .field-label-row { font-size: 0.75rem; color: var(--text2); text-align: center; margin-bottom: 0.15rem; text-transform: uppercase; letter-spacing: 0.04em; }
+    .pts-hint { font-size: 0.7rem; color: var(--text2); }
+    .toggle-row { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; }
+    .toggle-btn { flex: 1; padding: 0.9rem; font-size: 1rem; font-weight: 700; border-radius: 8px; border: 2px solid var(--border); }
+    .toggle-btn.active { border-color: var(--green); background: #002a00; color: var(--green); }
+    .park-row { margin-bottom: 0.75rem; }
+    .park-label { font-size: 0.85rem; color: var(--text2); margin-bottom: 0.3rem; }
+    .park-btns { display: flex; gap: 0.5rem; }
+    .park-btn { flex: 1; }
+    .total-bar {
+      position: sticky; bottom: 0; background: #110000; border-top: 2px solid var(--red);
+      padding: 0.75rem 1rem; display: flex; align-items: center; justify-content: center; gap: 1rem;
+    }
+    .total-label { font-size: 0.9rem; color: var(--text2); text-transform: uppercase; }
+    .total-score { font-size: 3.5rem; font-weight: 900; color: var(--red-light); font-variant-numeric: tabular-nums; }
+    .wait-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 200;
+      display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 1rem;
+    }
+    .wait-text { font-size: 2rem; font-weight: 900; color: var(--text2); text-transform: uppercase; letter-spacing: 0.1em; }
+    .cycle-info { font-size: 0.85rem; color: var(--text2); text-align: center; margin-bottom: 0.5rem; }
+  </style>
+</head>
+<body>
+
+  <header class="scorer-header" id="scorer-header">
+    <span class="scorer-title">RED SCORER</span>
+    <div class="timer-info">
+      <div class="period-compact" id="period-label">Waiting</div>
+      <div class="timer-compact" id="timer-el">0:00</div>
+    </div>
+  </header>
+
+  <div id="score-panel" class="score-panel"></div>
+
+  <div class="total-bar">
+    <span class="total-label">RED</span>
+    <span class="total-score" id="total-score">0</span>
+  </div>
+
+  <div class="wait-overlay hidden" id="wait-overlay">
+    <div class="wait-text" id="wait-text">Wait...</div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/common.js"></script>
+  <script>
+  (function () {
+    'use strict';
+
+    var ALLIANCE = 'red';
+    var state = {
+      matchId: null,
+      currentPeriod: null,
+      scores: {},
+      parkR1: 'none',
+      parkR2: 'none',
+    };
+
+    SK.mountPinPad(ALLIANCE, 'Red Alliance Scorer').then(function () {
+      SK.addLogoutButton(document.getElementById('scorer-header'));
+      init();
+    });
+
+    var timerEl   = document.getElementById('timer-el');
+    var periodLbl = document.getElementById('period-label');
+    var scorePanel = document.getElementById('score-panel');
+    var totalScore = document.getElementById('total-score');
+    var waitOverlay = document.getElementById('wait-overlay');
+    var waitText    = document.getElementById('wait-text');
+
+    function init() {
+      fetchTimerState();
+      connectSocketEvents();
+    }
+
+    // ── Fetch initial state ────────────────────────────────────────────────────
+    function fetchTimerState() {
+      fetch('/api/timer')
+        .then(function (r) { return r.json(); })
+        .then(function (ts) {
+          SK.applyTimerState(ts, timerEl, periodLbl);
+          if (ts.matchId) {
+            state.matchId = ts.matchId;
+            state.currentPeriod = ts.period;
+            fetchScores(ts.matchId);
+          }
+          renderScoringPanel();
+        })
+        .catch(function () {});
+    }
+
+    function fetchScores(matchId) {
+      fetch('/api/matches/' + matchId + '/scores')
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data && data[ALLIANCE]) {
+            state.scores = data[ALLIANCE];
+            var scores = data[ALLIANCE];
+            state.parkR1 = scores.park_r1 || 'none';
+            state.parkR2 = scores.park_r2 || 'none';
+            updateTotalScore(scores.total || 0);
+          }
+          renderScoringPanel();
+        })
+        .catch(function () {});
+    }
+
+    // ── Score panel rendering ──────────────────────────────────────────────────
+    function renderScoringPanel() {
+      while (scorePanel.firstChild) scorePanel.removeChild(scorePanel.firstChild);
+
+      var period = state.currentPeriod;
+
+      if (!state.matchId || !period) {
+        showWait('No match loaded');
+        return;
+      }
+
+      var ptype = period.type;
+
+      if (ptype === 'TRANSITION' || ptype === 'BUZZER') {
+        showWait(ptype === 'BUZZER' ? 'Buzzer!' : 'Wait...');
+        return;
+      }
+      hideWait();
+
+      if (ptype === 'AUTO') {
+        renderAutoSection();
+      } else if (ptype === 'TELEOP') {
+        renderTeleopSection();
+      } else if (ptype === 'ENDGAME') {
+        renderEndgameSection();
+      }
+    }
+
+    function showWait(msg) {
+      waitText.textContent = msg;
+      waitOverlay.classList.remove('hidden');
+    }
+
+    function hideWait() {
+      waitOverlay.classList.add('hidden');
+    }
+
+    // ── AUTO section ───────────────────────────────────────────────────────────
+    function renderAutoSection() {
+      var heading = makeHeading('Autonomous');
+      scorePanel.appendChild(heading);
+
+      scorePanel.appendChild(makeScoreRow('Artifacts Classified', 'auto_classified', '+3 pts', state.scores));
+      scorePanel.appendChild(makeScoreRow('Overflow Artifacts',   'auto_overflow',   '+1 pt',  state.scores));
+      scorePanel.appendChild(makeScoreRow('Pattern Matches',      'auto_pattern',    '+2 pts', state.scores));
+
+      // Robots Left toggle row
+      var leaveHeading = document.createElement('div');
+      leaveHeading.className = 'section-heading';
+      leaveHeading.style.marginTop = '0.75rem';
+      leaveHeading.textContent = 'Robots Left Start Zone';
+      scorePanel.appendChild(leaveHeading);
+
+      var toggleRow = document.createElement('div');
+      toggleRow.className = 'toggle-row';
+      var r1Btn = makeToggleBtn('R1 Leave', 'auto_leave_r1', state.scores.auto_leave_r1);
+      var r2Btn = makeToggleBtn('R2 Leave', 'auto_leave_r2', state.scores.auto_leave_r2);
+      toggleRow.appendChild(r1Btn);
+      toggleRow.appendChild(r2Btn);
+      scorePanel.appendChild(toggleRow);
+    }
+
+    // ── TELEOP section ─────────────────────────────────────────────────────────
+    function renderTeleopSection() {
+      scorePanel.appendChild(makeHeading('Teleop'));
+      scorePanel.appendChild(makeScoreRow('Artifacts Classified', 'teleop_classified', '+3 pts', state.scores));
+      scorePanel.appendChild(makeScoreRow('Overflow Artifacts',   'teleop_overflow',   '+1 pt',  state.scores));
+      scorePanel.appendChild(makeScoreRow('Balls Scored',         'teleop_balls',      '+1 pt',  state.scores));
+    }
+
+    // ── ENDGAME section ────────────────────────────────────────────────────────
+    function renderEndgameSection() {
+      scorePanel.appendChild(makeHeading('Endgame'));
+
+      var period = state.currentPeriod;
+      if (period && period.cycle) {
+        var cycleInfo = document.createElement('div');
+        cycleInfo.className = 'cycle-info';
+        cycleInfo.textContent = 'Cycle ' + period.cycle;
+        scorePanel.appendChild(cycleInfo);
+      }
+
+      scorePanel.appendChild(makeParkRow('Robot 1 Park', 1, state.parkR1));
+      scorePanel.appendChild(makeParkRow('Robot 2 Park', 2, state.parkR2));
+    }
+
+    // ── Row builders ───────────────────────────────────────────────────────────
+    function makeHeading(text) {
+      var el = document.createElement('div');
+      el.className = 'section-heading';
+      el.textContent = text;
+      return el;
+    }
+
+    function makeScoreRow(label, field, hint, scores) {
+      var wrapper = document.createElement('div');
+
+      var labelRow = document.createElement('div');
+      labelRow.className = 'field-label-row';
+      var labelSpan = document.createElement('span');
+      labelSpan.textContent = label + ' ';
+      var hintSpan = document.createElement('span');
+      hintSpan.className = 'pts-hint';
+      hintSpan.textContent = hint;
+      labelRow.appendChild(labelSpan);
+      labelRow.appendChild(hintSpan);
+      wrapper.appendChild(labelRow);
+
+      var row = document.createElement('div');
+      row.className = 'score-row';
+
+      var minusBtn = document.createElement('button');
+      minusBtn.className = 'minus-btn';
+      minusBtn.textContent = '−';
+      minusBtn.addEventListener('click', function () { sendIncrement(field, -1); });
+
+      var countEl = document.createElement('div');
+      countEl.className = 'score-field-value';
+      countEl.id = 'field-' + field;
+      countEl.textContent = scores[field] != null ? scores[field] : 0;
+
+      var plusBtn = document.createElement('button');
+      plusBtn.className = 'plus-btn';
+      plusBtn.textContent = '+';
+      plusBtn.addEventListener('click', function () { sendIncrement(field, 1); });
+
+      row.appendChild(minusBtn);
+      row.appendChild(countEl);
+      row.appendChild(plusBtn);
+      wrapper.appendChild(row);
+      return wrapper;
+    }
+
+    function makeToggleBtn(label, field, currentVal) {
+      var btn = document.createElement('button');
+      btn.className = 'toggle-btn' + (currentVal ? ' active' : '');
+      btn.textContent = label;
+      btn.addEventListener('click', function () {
+        var newVal = !state.scores[field];
+        sendToggle(field, newVal ? 1 : 0);
+      });
+      btn.id = 'toggle-' + field;
+      return btn;
+    }
+
+    function makeParkRow(label, robotNum, currentStatus) {
+      var wrapper = document.createElement('div');
+      wrapper.className = 'park-row';
+      var lbl = document.createElement('div');
+      lbl.className = 'park-label';
+      lbl.textContent = label;
+      wrapper.appendChild(lbl);
+
+      var btns = document.createElement('div');
+      btns.className = 'park-btns';
+      btns.id = 'park-btns-r' + robotNum;
+
+      ['none', 'partial', 'full'].forEach(function (status) {
+        var btn = document.createElement('button');
+        btn.className = 'park-btn' + (currentStatus === status ? ' active-' + status : '');
+        btn.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+        btn.dataset.status = status;
+        btn.addEventListener('click', function () { sendParkUpdate(robotNum, status); });
+        btns.appendChild(btn);
+      });
+
+      wrapper.appendChild(btns);
+      return wrapper;
+    }
+
+    // ── Socket emitters ────────────────────────────────────────────────────────
+    var socket;
+    function getSocket() {
+      if (!socket) socket = SK.connectSocket();
+      return socket;
+    }
+
+    function sendIncrement(field, delta) {
+      if (!state.matchId) return;
+      var ev = delta > 0 ? 'score_increment' : 'score_decrement';
+      getSocket().emit(ev, { matchId: state.matchId, alliance: ALLIANCE, field: field });
+    }
+
+    function sendToggle(field, val) {
+      if (!state.matchId) return;
+      getSocket().emit('score_set', { matchId: state.matchId, alliance: ALLIANCE, field: field, value: val });
+    }
+
+    function sendParkUpdate(robot, status) {
+      if (!state.matchId) return;
+      getSocket().emit('park_update', { matchId: state.matchId, alliance: ALLIANCE, robot: robot, status: status });
+    }
+
+    // ── Update helpers ─────────────────────────────────────────────────────────
+    function updateTotalScore(val) {
+      totalScore.textContent = val;
+    }
+
+    function applyScoreUpdate(data) {
+      if (!data) return;
+      var allianceData = data[ALLIANCE] || data;
+      if (allianceData.total != null) updateTotalScore(allianceData.total);
+
+      // Update individual field displays without full re-render
+      var fields = ['auto_classified','auto_overflow','auto_pattern','auto_leave_r1','auto_leave_r2',
+                    'teleop_classified','teleop_overflow','teleop_balls'];
+      fields.forEach(function (f) {
+        var el = document.getElementById('field-' + f);
+        if (el && allianceData[f] != null) el.textContent = allianceData[f];
+        var toggle = document.getElementById('toggle-' + f);
+        if (toggle) toggle.className = 'toggle-btn' + (allianceData[f] ? ' active' : '');
+      });
+
+      if (allianceData.park_r1) updateParkButtons(1, allianceData.park_r1);
+      if (allianceData.park_r2) updateParkButtons(2, allianceData.park_r2);
+      state.scores = Object.assign({}, state.scores, allianceData);
+    }
+
+    function updateParkButtons(robotNum, status) {
+      var container = document.getElementById('park-btns-r' + robotNum);
+      if (!container) return;
+      var btns = container.querySelectorAll('.park-btn');
+      btns.forEach(function (btn) {
+        btn.className = 'park-btn' + (btn.dataset.status === status ? ' active-' + status : '');
+      });
+      if (robotNum === 1) state.parkR1 = status;
+      if (robotNum === 2) state.parkR2 = status;
+    }
+
+    // ── Socket events ──────────────────────────────────────────────────────────
+    function connectSocketEvents() {
+      var sock = getSocket();
+      if (!sock) return;
+
+      sock.on('timer_tick', function (ts) {
+        SK.applyTimerState(ts, timerEl, periodLbl);
+      });
+
+      sock.on('period_change', function (ts) {
+        SK.applyTimerState(ts, timerEl, periodLbl);
+        SK.playBuzzer();
+        state.currentPeriod = ts.period;
+        renderScoringPanel();
+      });
+
+      sock.on('match_start', function (ts) {
+        SK.applyTimerState(ts, timerEl, periodLbl);
+        state.currentPeriod = ts.period;
+        renderScoringPanel();
+      });
+
+      sock.on('match_end', function () {
+        showWait('Match Over');
+      });
+
+      sock.on('match_loaded', function (data) {
+        if (data && data.matchId) {
+          state.matchId = data.matchId;
+          state.currentPeriod = null;
+          state.scores = {};
+          fetchScores(data.matchId);
+        }
+        hideWait();
+        renderScoringPanel();
+      });
+
+      sock.on('score_update', function (data) {
+        applyScoreUpdate(data);
+      });
+    }
+
+  })();
+  </script>
+</body>
+</html>

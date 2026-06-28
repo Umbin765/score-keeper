@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Score Keeper — Home</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .landing-header {
+      text-align: center;
+      padding: 3rem 1rem 2rem;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 2rem;
+    }
+    .landing-header h1 {
+      font-size: clamp(2rem, 5vw, 3.5rem);
+      font-weight: 900;
+      letter-spacing: -0.02em;
+    }
+    .landing-header h1 span.red-text { color: var(--red-light); }
+    .landing-header h1 span.blue-text { color: var(--blue-light); }
+    .landing-header p {
+      color: var(--text2);
+      margin-top: 0.5rem;
+      font-size: 1.05rem;
+    }
+    .url-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1rem;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 1rem 3rem;
+    }
+    .url-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.25rem 1.5rem;
+      transition: border-color 0.15s, background 0.15s;
+      display: block;
+      text-decoration: none;
+      color: inherit;
+    }
+    .url-card:hover {
+      border-color: var(--blue);
+      background: var(--bg3);
+      text-decoration: none;
+    }
+    .url-card .url-path {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--blue-light);
+      font-family: var(--font-mono);
+      margin-bottom: 0.35rem;
+    }
+    .url-card .url-title {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 0.3rem;
+    }
+    .url-card .url-desc {
+      font-size: 0.85rem;
+      color: var(--text2);
+      line-height: 1.5;
+    }
+    .url-card .url-badge {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      margin-bottom: 0.5rem;
+    }
+    .badge-public { background: var(--bg4); color: var(--text2); }
+    .badge-pin    { background: var(--yellow-bg); color: var(--yellow); border: 1px solid var(--yellow); }
+    .badge-admin  { background: var(--red-bg); color: var(--red-light); border: 1px solid var(--red-border); }
+    .section-label {
+      max-width: 1100px;
+      margin: 0 auto 0.5rem;
+      padding: 0 1rem;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text2);
+    }
+    .section-label:not(:first-of-type) { margin-top: 1.5rem; }
+  </style>
+</head>
+<body>
+  <div id="landing-root"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/common.js"></script>
+  <script>
+    (function () {
+      var root = document.getElementById('landing-root');
+
+      // ── Header ──────────────────────────────────────────────────────────────
+      var header = document.createElement('div');
+      header.className = 'landing-header';
+
+      var h1 = document.createElement('h1');
+      var spanRed = document.createElement('span');
+      spanRed.className = 'red-text';
+      spanRed.textContent = 'Score';
+      var spanBlue = document.createElement('span');
+      spanBlue.className = 'blue-text';
+      spanBlue.textContent = 'Keeper';
+      h1.appendChild(spanRed);
+      h1.appendChild(document.createTextNode(' '));
+      h1.appendChild(spanBlue);
+
+      var tagline = document.createElement('p');
+      tagline.textContent = 'Robotics competition scoring system — select a view below';
+
+      header.appendChild(h1);
+      header.appendChild(tagline);
+      root.appendChild(header);
+
+      // ── URL entries ─────────────────────────────────────────────────────────
+      var pages = [
+        // label, badge, path, title, desc
+        ['Audience', 'public', '/display',  'Display Screen',   'Full-screen scoreboard for audience TVs. Shows live timer, scores, and team numbers.'],
+        ['Audience', 'public', '/public',   'Public View',      'Mobile-friendly page for students and guests. Live match, upcoming matches, rankings, and schedule.'],
+        ['Audience', 'public', '/rankings', 'Rankings',         'Full rankings table with RP breakdown per team. Includes CSV export.'],
+        ['Audience', 'public', '/bracket',  'Playoff Bracket',  'Visual playoff bracket. Updates live as matches are played.'],
+        ['Queue',    'pin',    '/queue',     'Queue Display',    'Large-font queueing area screen. PIN protected. Shows ON FIELD, REPORT TO QUEUE, and UPCOMING matches.'],
+        ['Operators','pin',    '/control',   'Control Panel',    'Match control — start, pause, resume, abort. PIN protected.'],
+        ['Operators','pin',    '/red',       'Red Alliance',     'Red alliance scoring tablet. PIN protected.'],
+        ['Operators','pin',    '/blue',      'Blue Alliance',    'Blue alliance scoring tablet. PIN protected.'],
+        ['Operators','pin',    '/ref',       'Referee Panel',    'Field referee card and penalty entry. PIN protected.'],
+        ['Operators','pin',    '/headref',   'Head Referee',     'Head referee override and review panel. PIN protected.'],
+        ['Admin',    'admin',  '/admin',     'Admin Panel',      'Full event management: teams, schedule, PIN settings, exports. Password protected.'],
+      ];
+
+      var sections = {};
+      pages.forEach(function (p) {
+        if (!sections[p[0]]) sections[p[0]] = [];
+        sections[p[0]].push(p);
+      });
+
+      Object.keys(sections).forEach(function (sectionName) {
+        var sLabel = document.createElement('div');
+        sLabel.className = 'section-label';
+        sLabel.textContent = sectionName;
+        root.appendChild(sLabel);
+
+        var grid = document.createElement('div');
+        grid.className = 'url-grid';
+
+        sections[sectionName].forEach(function (entry) {
+          var badge = entry[1], path = entry[2], title = entry[3], desc = entry[4];
+
+          var card = document.createElement('a');
+          card.className = 'url-card';
+          card.href = path;
+
+          var badgeEl = document.createElement('div');
+          badgeEl.className = 'url-badge badge-' + badge;
+          badgeEl.textContent = badge === 'admin' ? 'Admin' : badge === 'pin' ? 'PIN Required' : 'Public';
+
+          var pathEl = document.createElement('div');
+          pathEl.className = 'url-path';
+          pathEl.textContent = path;
+
+          var titleEl = document.createElement('div');
+          titleEl.className = 'url-title';
+          titleEl.textContent = title;
+
+          var descEl = document.createElement('div');
+          descEl.className = 'url-desc';
+          descEl.textContent = desc;
+
+          card.appendChild(badgeEl);
+          card.appendChild(pathEl);
+          card.appendChild(titleEl);
+          card.appendChild(descEl);
+          grid.appendChild(card);
+        });
+
+        root.appendChild(grid);
+      });
+    })();
+  </script>
+</body>
+</html>

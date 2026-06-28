@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Panel — Score Keeper</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .tab-bar {
+      display: flex; flex-wrap: wrap; gap: 0.25rem;
+      padding: 0.75rem 1rem 0; background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; z-index: 50;
+    }
+    .tab-btn {
+      padding: 0.4rem 0.8rem; font-size: 0.85rem; font-weight: 600;
+      border-radius: 6px 6px 0 0; border: 1px solid transparent;
+      border-bottom: none; background: transparent; color: var(--text2);
+    }
+    .tab-btn.active {
+      background: var(--bg); color: var(--text);
+      border-color: var(--border); border-bottom: 1px solid var(--bg);
+      margin-bottom: -1px;
+    }
+    .tab-btn:hover:not(.active) { color: var(--text); background: var(--bg3); }
+    .tab-content { display: none; padding: 1rem; }
+    .tab-content.active { display: block; }
+    .form-row { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; }
+    .form-row label { min-width: 160px; font-size: 0.9rem; color: var(--text2); }
+    .form-row input, .form-row select { flex: 1; min-width: 100px; }
+    .period-row {
+      display: grid;
+      grid-template-columns: 2rem 1fr 60px 100px 80px 80px 2rem 2rem 2rem;
+      gap: 0.4rem; align-items: center; padding: 0.4rem 0.5rem;
+      background: var(--bg3); border-radius: 6px; margin-bottom: 0.35rem;
+    }
+    .period-row .pos-num { color: var(--text2); font-size: 0.85rem; text-align: center; }
+    .period-row input, .period-row select { font-size: 0.85rem; padding: 0.2rem 0.4rem; }
+    .move-btn { padding: 0.2rem 0.4rem; font-size: 0.8rem; }
+    .rm-btn   { padding: 0.2rem 0.4rem; font-size: 0.8rem; color: var(--red-light); border-color: var(--red-border); background: var(--red-bg); }
+    .alliance-bracket-row { display: grid; grid-template-columns: 50px 1fr 1fr auto; gap: 0.5rem; align-items: center; margin-bottom: 0.4rem; }
+    .alliance-bracket-row label { font-size: 0.85rem; color: var(--text2); }
+    .rankings-table-wrap { max-height: 400px; overflow-y: auto; }
+    .schedule-table-wrap { max-height: 400px; overflow-y: auto; }
+    .export-row { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
+    .export-btn { padding: 0.4rem 0.8rem; font-size: 0.85rem; }
+    .danger-section { border-color: var(--red-border); background: var(--red-bg); }
+    .section-sub { font-size: 0.95rem; font-weight: 700; color: var(--text2); margin: 0.75rem 0 0.4rem; text-transform: uppercase; letter-spacing: 0.06em; }
+    input[type="file"] { color: var(--text2); }
+  </style>
+</head>
+<body>
+
+  <header class="page-header" id="page-header">
+    <span class="page-title">Admin Panel</span>
+  </header>
+
+  <nav class="tab-bar" id="tab-bar"></nav>
+  <div id="tab-panels"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/common.js"></script>
+  <script>
+  (function () {
+    'use strict';
+
+    // ── Auth ───────────────────────────────────────────────────────────────────
+    SK.mountPinPad('admin', 'Admin Panel').then(function () {
+      SK.addLogoutButton(document.getElementById('page-header'));
+      buildTabs();
+      fetchAllData();
+    });
+
+    // ── Tab system ─────────────────────────────────────────────────────────────
+    var TABS = [
+      { id: 'teams',    label: 'Teams' },
+      { id: 'scoring',  label: 'Scoring Values' },
+      { id: 'rp',       label: 'Ranking Points' },
+      { id: 'periods',  label: 'Periods' },
+      { id: 'schedule', label: 'Schedule' },
+      { id: 'pins',     label: 'PINs' },
+      { id: 'playoffs', label: 'Playoffs' },
+      { id: 'reset',    label: 'Reset' },
+    ];
+
+    var panels = {};
+    var tabBar  = document.getElementById('tab-bar');
+    var tabRoot = document.getElementById('tab-panels');
+
+    function buildTabs() {
+      TABS.forEach(function (tab, i) {
+        var btn = document.createElement('button');
+        btn.className = 'tab-btn' + (i === 0 ? ' active' : '');
+        btn.textContent = tab.label;
+        btn.dataset.tab = tab.id;
+        btn.addEventListener('click', function () { activateTab(tab.id); });
+        tabBar.appendChild(btn);
+
+        var panel = document.createElement('div');
+        panel.className = 'tab-content' + (i === 0 ? ' active' : '');
+        panel.id = 'tab-' + tab.id;
+        tabRoot.appendChild(panel);
+        panels[tab.id] = panel;
+      });
+
+      buildTeamsTab();
+      buildScoringTab();
+      buildRpTab();
+      buildPeriodsTab();
+      buildScheduleTab();
+      buildPinsTab();
+      buildPlayoffsTab();
+      buildResetTab();
+    }
+
+    function activateTab(id) {
+      tabBar.querySelectorAll('.tab-btn').forEach(function (b) {
+        b.classList.toggle('active', b.dataset.tab === id);
+      });
+      Object.keys(panels).forEach(function (k) {
+        panels[k].classList.toggle('active', k === id);
+      });
+    }
+
+    // ── Global data state ──────────────────────────────────────────────────────
+    var gTeams    = [];
+    var gSettings = {};
+    var gPeriods  = [];
+    var gMatches  = [];
+    var gRanked   = [];
+
+    function fetchAllData() {
+      fetchTeams();
+      fetchSettings();
+      fetchPeriods();
+      fetchMatches();
+    }
+
+    function fetchTeams() {
+      fetch('/api/teams')
+        .then(function (r) { return r.json(); })
+        .then(function (teams) { gTeams = teams; renderTeamsTable(); renderPlayoffsRankings(); })
+        .catch(function () {});
+    }
+
+    function fetchSettings() {
+      fetch('/api/settings')
+        .then(function (r) { return r.json(); })
+        .then(function (s) { gSettings = s; populateScoringFields(); populateRpFields(); populatePinFields(); })
+        .catch(function () {});
+    }
+
+    function fetchPeriods() {
+      fetch('/api/periods')
+        .then(function (r) { return r.json(); })
+        .then(function (p) { gPeriods = p || []; renderPeriodsTable(); })
+        .catch(function () {});
+    }
+
+    function fetchMatches() {
+      fetch('/api/matches')
+        .then(function (r) { return r.json(); })
+        .then(function (m) { gMatches = m || []; renderScheduleTable(); })
+        .catch(function () {});
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // TEAMS TAB
+    // ════════════════════════════════════════════════════════════════════════════
+    var teamsTableBody;
+
+    function buildTeamsTab() {
+      var p = panels.teams;
+
+      var addSection = makeAdminSection('Add Team');
+      var numInput  = makeInput('number', 'Team Number', '100');
+      var nameInput = makeInput('text',   'Team Name',   'Iron Eagles');
+      numInput.style.width = '100px';
+      var addRow = document.createElement('div');
+      addRow.className = 'form-row';
+      addRow.appendChild(numInput);
+      addRow.appendChild(nameInput);
+      var addBtn = document.createElement('button');
+      addBtn.textContent = 'Add Team';
+      addBtn.addEventListener('click', function () { addTeam(numInput.value, nameInput.value, numInput, nameInput); });
+      addRow.appendChild(addBtn);
+      addSection.appendChild(addRow);
+
+      // CSV Import
+      var importRow = document.createElement('div');
+      importRow.className = 'form-row mt-2';
+      var fileInput = document.createElement('input');
+      fileInput.type = 'file';
+      fileInput.accept = '.csv';
+      var importBtn = document.createElement('button');
+      importBtn.textContent = 'Import CSV';
+      importBtn.addEventListener('click', function () { importCsv(fileInput); });
+      importRow.appendChild(fileInput);
+      importRow.appendChild(importBtn);
+      addSection.appendChild(importRow);
+
+      p.appendChild(addSection);
+
+      // Teams table
+      var tableSection = makeAdminSection('Current Teams');
+      var tableWrap = document.createElement('div');
+      tableWrap.style.maxHeight = '400px';
+      tableWrap.style.overflowY = 'auto';
+      var table = document.createElement('table');
+      table.className = 'data-table';
+      var thead = document.createElement('thead');
+      var htr = document.createElement('tr');
+      ['#', 'Name', 'Delete'].forEach(function (h) {
+        var th = document.createElement('th');
+        th.textContent = h;
+        htr.appendChild(th);
+      });
+      thead.appendChild(htr);
+      table.appendChild(thead);
+      teamsTableBody = document.createElement('tbody');
+      table.appendChild(teamsTableBody);
+      tableWrap.appendChild(table);
+      tableSection.appendChild(tableWrap);
+      p.appendChild(tableSection);
+    }
+
+    function renderTeamsTable() {
+      if (!teamsTableBody) return;
+      while (teamsTableBody.firstChild) teamsTableBody.removeChild(teamsTableBody.firstChild);
+      gTeams.forEach(function (team) {
+        var row = document.createElement('tr');
+        var numTd = document.createElement('td');
+        numTd.textContent = team.number || team.team_number;
+        var nameTd = document.createElement('td');
+        nameTd.textContent = team.name;
+        var delTd = document.createElement('td');
+        var delBtn = document.createElement('button');
+        delBtn.className = 'danger-btn';
+        delBtn.style.fontSize = '0.8rem';
+        delBtn.style.padding = '0.2rem 0.5rem';
+        delBtn.textContent = 'Delete';
+        delBtn.addEventListener('click', function () { deleteTeam(team.id || team.number || team.team_number); });
+        delTd.appendChild(delBtn);
+        row.appendChild(numTd);
+        row.appendChild(nameTd);
+        row.appendChild(delTd);
+        teamsTableBody.appendChild(row);
+      });
+    }
+
+    function addTeam(num, name, numInput, nameInput) {
+      if (!num || !name) { showToast('Fill in team number and name', 'error'); return; }
+      fetch('/api/teams', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ number: parseInt(num, 10), name: name }),
+      })
+        .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+        .then(function () { showToast('Team added', 'success'); numInput.value = ''; nameInput.value = ''; fetchTeams(); })
+        .catch(function () { showToast('Failed to add team', 'error'); });
+    }
+
+    function deleteTeam(id) {
+      if (!confirm('Delete team ' + id + '?')) return;
+      fetch('/api/teams/' + id, { method: 'DELETE' })
+        .then(function (r) { if (!r.ok) throw new Error(); })
+        .then(function () { showToast('Team deleted', 'success'); fetchTeams(); })
+        .catch(function () { showToast('Failed to delete', 'error'); });
+    }
+
+    function importCsv(fileInput) {
+      var file = fileInput.files && fileInput.files[0];
+      if (!file) { showToast('Select a CSV file first', 'error'); return; }
+      var reader = new FileReader();
+      reader.onload = function (e) {
+        var text = e.target.result;
+        var lines = text.split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
+        var teams = [];
+        lines.forEach(function (line, i) {
+          if (i === 0 && line.toLowerCase().startsWith('number')) return; // skip header
+          var parts = line.split(',');
+          var num  = parseInt(parts[0], 10);
+          var name = (parts[1] || '').trim().replace(/^"|"$/g, '');
+          if (!isNaN(num) && name) teams.push({ number: num, name: name });
+        });
+        if (!teams.length) { showToast('No valid rows in CSV', 'error'); return; }
+        fetch('/api/teams/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ teams: teams }),
+        })
+          .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+          .then(function () { showToast('Imported ' + teams.length + ' teams', 'success'); fetchTeams(); })
+          .catch(function () { showToast('Import failed', 'error'); });
+      };
+      reader.readAsText(file);
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // SCORING VALUES TAB
+    // ════════════════════════════════════════════════════════════════════════════
+    var SCORING_FIELDS = [
+      ['pts_auto_classified',   'Auto: Artifacts Classified'],
+      ['pts_auto_overflow',     'Auto: Overflow Artifacts'],
+      ['pts_auto_leave',        'Auto: Robot Leave'],
+      ['pts_auto_pattern',      'Auto: Pattern Match'],
+      ['pts_teleop_classified', 'Teleop: Artifacts Classified'],
+      ['pts_teleop_overflow',   'Teleop: Overflow Artifacts'],
+      ['pts_teleop_balls',      'Teleop: Balls Scored'],
+      ['pts_park_partial',      'Park: Partial'],
+      ['pts_park_full',         'Park: Full'],
+      ['pts_park_bonus',        'Park: Bonus'],
+      ['pts_foul_minor',        'Penalty: Minor Foul'],
+      ['pts_foul_major',        'Penalty: Major Foul'],
+    ];
+
+    var scoringInputs = {};
+
+    function buildScoringTab() {
+      var p = panels.scoring;
+      var section = makeAdminSection('Point Values');
+      SCORING_FIELDS.forEach(function (f) {
+        var row = document.createElement('div');
+        row.className = 'form-row';
+        var lbl = document.createElement('label');
+        lbl.textContent = f[1];
+        var inp = makeInput('number', '', '0');
+        inp.style.width = '80px';
+        inp.id = 'scoring-' + f[0];
+        scoringInputs[f[0]] = inp;
+        row.appendChild(lbl);
+        row.appendChild(inp);
+        section.appendChild(row);
+      });
+      var saveBtn = document.createElement('button');
+      saveBtn.className = 'success-btn mt-2';
+      saveBtn.textContent = 'Save Scoring Values';
+      saveBtn.addEventListener('click', saveScoringValues);
+      section.appendChild(saveBtn);
+      p.appendChild(section);
+    }
+
+    function populateScoringFields() {
+      SCORING_FIELDS.forEach(function (f) {
+        var inp = scoringInputs[f[0]];
+        if (inp && gSettings[f[0]] != null) inp.value = gSettings[f[0]];
+      });
+    }
+
+    function saveScoringValues() {
+      var payload = {};
+      SCORING_FIELDS.forEach(function (f) {
+        var v = scoringInputs[f[0]];
+        if (v) payload[f[0]] = parseFloat(v.value) || 0;
+      });
+      putSettings(payload, 'Scoring values saved');
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // RANKING POINTS TAB
+    // ════════════════════════════════════════════════════════════════════════════
+    var RP_FIELDS = [
+      ['rp_win',                 'RP: Win'],
+      ['rp_tie',                 'RP: Tie'],
+      ['rp_loss',                'RP: Loss'],
+      ['threshold_park_1',       'Park RP Threshold 1 (robots)'],
+      ['threshold_park_2',       'Park RP Threshold 2 (robots)'],
+      ['threshold_pattern',      'Pattern RP Threshold'],
+      ['threshold_balls',        'Ball RP Threshold'],
+      ['matches_per_team',       'Matches per Team'],
+    ];
+
+    var rpInputs = {};
+
+    function buildRpTab() {
+      var p = panels.rp;
+      var section = makeAdminSection('Ranking Point Configuration');
+      RP_FIELDS.forEach(function (f) {
+        var row = document.createElement('div');
+        row.className = 'form-row';
+        var lbl = document.createElement('label');
+        lbl.textContent = f[1];
+        var inp = makeInput('number', '', '0');
+        inp.style.width = '80px';
+        inp.id = 'rp-' + f[0];
+        rpInputs[f[0]] = inp;
+        row.appendChild(lbl);
+        row.appendChild(inp);
+        section.appendChild(row);
+      });
+      var saveBtn = document.createElement('button');
+      saveBtn.className = 'success-btn mt-2';
+      saveBtn.textContent = 'Save RP Config';
+      saveBtn.addEventListener('click', saveRpValues);
+      section.appendChild(saveBtn);
+      p.appendChild(section);
+    }
+
+    function populateRpFields() {
+      RP_FIELDS.forEach(function (f) {
+        var inp = rpInputs[f[0]];
+        if (inp && gSettings[f[0]] != null) inp.value = gSettings[f[0]];
+      });
+    }
+
+    function saveRpValues() {
+      var payload = {};
+      RP_FIELDS.forEach(function (f) {
+        var v = rpInputs[f[0]];
+        if (v) payload[f[0]] = parseFloat(v.value) || 0;
+      });
+      putSettings(payload, 'RP config saved');
+    }
+
+    function putSettings(payload, successMsg) {
+      fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+        .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+        .then(function () { showToast(successMsg, 'success'); fetchSettings(); })
+        .catch(function () { showToast('Save failed', 'error'); });
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // PERIODS TAB
+    // ════════════════════════════════════════════════════════════════════════════
+    var periodsContainer;
+    var PERIOD_TYPES = ['AUTO','TELEOP','ENDGAME','TRANSITION','BUZZER'];
+
+    function buildPeriodsTab() {
+      var p = panels.periods;
+      var section = makeAdminSection('Period Configuration');
+
+      periodsContainer = document.createElement('div');
+      periodsContainer.id = 'periods-container';
+      section.appendChild(periodsContainer);
+
+      var addBtn = document.createElement('button');
+      addBtn.textContent = '+ Add Period';
+      addBtn.className = 'mt-1';
+      addBtn.addEventListener('click', function () {
+        gPeriods.push({ position: gPeriods.length + 1, name: 'New Period', duration: 30, type: 'AUTO', group_id: null, group_repeats: 1 });
+        renderPeriodsTable();
+      });
+
+      var saveBtn = document.createElement('button');
+      saveBtn.textContent = 'Save Periods';
+      saveBtn.className = 'success-btn mt-1';
+      saveBtn.style.marginLeft = '0.5rem';
+      saveBtn.addEventListener('click', savePeriods);
+
+      var btnRow = document.createElement('div');
+      btnRow.className = 'btn-row mt-2';
+      btnRow.appendChild(addBtn);
+      btnRow.appendChild(saveBtn);
+      section.appendChild(btnRow);
+      p.appendChild(section);
+    }
+
+    function renderPeriodsTable() {
+      if (!periodsContainer) return;
+      while (periodsContainer.firstChild) periodsContainer.removeChild(periodsContainer.firstChild);
+
+      gPeriods.forEach(function (period, idx) {
+        var row = document.createElement('div');
+        row.className = 'period-row';
+
+        var pos = document.createElement('span');
+        pos.className = 'pos-num';
+        pos.textContent = idx + 1;
+
+        var nameInp = makeInput('text', 'Name', 'Period');
+        nameInp.value = period.name || '';
+        nameInp.addEventListener('input', function () { gPeriods[idx].name = nameInp.value; });
+
+        var durInp = makeInput('number', 'Secs', '30');
+        durInp.value = period.duration || 30;
+        durInp.style.width = '60px';
+        durInp.addEventListener('input', function () { gPeriods[idx].duration = parseInt(durInp.value, 10); });
+
+        var typeSel = document.createElement('select');
+        PERIOD_TYPES.forEach(function (t) {
+          var opt = document.createElement('option');
+          opt.value = t;
+          opt.textContent = t;
+          if (t === period.type) opt.selected = true;
+          typeSel.appendChild(opt);
+        });
+        typeSel.addEventListener('change', function () { gPeriods[idx].type = typeSel.value; });
+
+        var groupInp = makeInput('text', 'Group', '');
+        groupInp.value = period.group_id || '';
+        groupInp.style.width = '80px';
+        groupInp.placeholder = 'Group ID';
+        groupInp.addEventListener('input', function () { gPeriods[idx].group_id = groupInp.value || null; });
+
+        var repeatInp = makeInput('number', 'Rpt', '1');
+        repeatInp.value = period.group_repeats || 1;
+        repeatInp.style.width = '50px';
+        repeatInp.addEventListener('input', function () { gPeriods[idx].group_repeats = parseInt(repeatInp.value, 10) || 1; });
+
+        var upBtn = document.createElement('button');
+        upBtn.className = 'move-btn';
+        upBtn.textContent = '↑';
+        upBtn.disabled = idx === 0;
+        upBtn.addEventListener('click', function () { movePeriod(idx, -1); });
+
+        var downBtn = document.createElement('button');
+        downBtn.className = 'move-btn';
+        downBtn.textContent = '↓';
+        downBtn.disabled = idx === gPeriods.length - 1;
+        downBtn.addEventListener('click', function () { movePeriod(idx, 1); });
+
+        var rmBtn = document.createElement('button');
+        rmBtn.className = 'rm-btn';
+        rmBtn.textContent = '✕';
+        rmBtn.addEventListener('click', function () {
+          gPeriods.splice(idx, 1);
+          renderPeriodsTable();
+        });
+
+        row.appendChild(pos);
+        row.appendChild(nameInp);
+        row.appendChild(durInp);
+        row.appendChild(typeSel);
+        row.appendChild(groupInp);
+        row.appendChild(repeatInp);
+        row.appendChild(upBtn);
+        row.appendChild(downBtn);
+        row.appendChild(rmBtn);
+        periodsContainer.appendChild(row);
+      });
+    }
+
+    function movePeriod(idx, dir) {
+      var other = idx + dir;
+      if (other < 0 || other >= gPeriods.length) return;
+      var tmp = gPeriods[idx];
+      gPeriods[idx] = gPeriods[other];
+      gPeriods[other] = tmp;
+      renderPeriodsTable();
+    }
+
+    function savePeriods() {
+      var payload = gPeriods.map(function (p, i) {
+        return {
+          position: i + 1,
+          name: p.name,
+          duration: p.duration,
+          type: p.type,
+          group_id: p.group_id || null,
+          group_repeats: p.group_repeats || 1,
+        };
+      });
+      fetch('/api/periods', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ periods: payload }),
+      })
+        .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+        .then(function () { showToast('Periods saved', 'success'); fetchPeriods(); })
+        .catch(function () { showToast('Save failed', 'error'); });
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // SCHEDULE TAB
+    // ════════════════════════════════════════════════════════════════════════════
+    var scheduleTableBody;
+
+    function buildScheduleTab() {
+      var p = panels.schedule;
+      var genSection = makeAdminSection('Generate Schedule');
+
+      var genBtn = document.createElement('button');
+      genBtn.className = 'success-btn';
+      genBtn.textContent = 'Generate Schedule';
+      genBtn.addEventListener('click', generateSchedule);
+      genSection.appendChild(genBtn);
+
+      var exportRow = document.createElement('div');
+      exportRow.className = 'export-row';
+      var expSched = document.createElement('a');
+      expSched.href = '/api/export/schedule.csv';
+      expSched.download = 'schedule.csv';
+      expSched.className = 'export-btn';
+      var schedBtn = document.createElement('button');
+      schedBtn.textContent = 'Export Schedule CSV';
+      schedBtn.className = 'export-btn';
+      schedBtn.addEventListener('click', function () { window.location.href = '/api/export/schedule.csv'; });
+      var rankBtn = document.createElement('button');
+      rankBtn.textContent = 'Export Rankings CSV';
+      rankBtn.className = 'export-btn';
+      rankBtn.addEventListener('click', function () { window.location.href = '/api/export/rankings.csv'; });
+      exportRow.appendChild(schedBtn);
+      exportRow.appendChild(rankBtn);
+      genSection.appendChild(exportRow);
+      p.appendChild(genSection);
+
+      var tableSection = makeAdminSection('Current Schedule');
+      var tableWrap = document.createElement('div');
+      tableWrap.className = 'schedule-table-wrap';
+      var table = document.createElement('table');
+      table.className = 'data-table';
+      var thead = document.createElement('thead');
+      var htr = document.createElement('tr');
+      ['Match #', 'Red 1', 'Red 2', 'Blue 1', 'Blue 2', 'State'].forEach(function (h) {
+        var th = document.createElement('th');
+        th.textContent = h;
+        htr.appendChild(th);
+      });
+      thead.appendChild(htr);
+      table.appendChild(thead);
+      scheduleTableBody = document.createElement('tbody');
+      table.appendChild(scheduleTableBody);
+      tableWrap.appendChild(table);
+      tableSection.appendChild(tableWrap);
+      p.appendChild(tableSection);
+    }
+
+    function renderScheduleTable() {
+      if (!scheduleTableBody) return;
+      while (scheduleTableBody.firstChild) scheduleTableBody.removeChild(scheduleTableBody.firstChild);
+      gMatches.forEach(function (m) {
+        var row = document.createElement('tr');
+        [m.match_number, m.red1, m.red2, m.blue1, m.blue2, m.state].forEach(function (cell) {
+          var td = document.createElement('td');
+          td.textContent = cell != null ? cell : '—';
+          row.appendChild(td);
+        });
+        scheduleTableBody.appendChild(row);
+      });
+      if (!gMatches.length) {
+        var row = document.createElement('tr');
+        var td = document.createElement('td');
+        td.colSpan = 6;
+        td.textContent = 'No matches scheduled yet.';
+        td.style.textAlign = 'center';
+        td.style.color = 'var(--text2)';
+        row.appendChild(td);
+        scheduleTableBody.appendChild(row);
+      }
+    }
+
+    function generateSchedule() {
+      if (!confirm('Generate a new schedule? Existing matches will be replaced.')) return;
+      fetch('/api/matches/generate', { method: 'POST' })
+        .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+        .then(function () { showToast('Schedule generated', 'success'); fetchMatches(); })
+        .catch(function () { showToast('Generation failed', 'error'); });
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // PINS TAB
+    // ════════════════════════════════════════════════════════════════════════════
+    var PIN_FIELDS = [
+      ['pin_red',      'Red Alliance PIN'],
+      ['pin_blue',     'Blue Alliance PIN'],
+      ['pin_ref',      'Referee PIN'],
+      ['pin_headref',  'Head Referee PIN'],
+      ['pin_control',  'Control Panel PIN'],
+      ['pin_queue',    'Queue Display PIN'],
+      ['admin_password','Admin Password'],
+    ];
+
+    var pinInputs = {};
+
+    function buildPinsTab() {
+      var p = panels.pins;
+      var section = makeAdminSection('Manage PINs & Password');
+      PIN_FIELDS.forEach(function (f) {
+        var row = document.createElement('div');
+        row.className = 'form-row';
+        var lbl = document.createElement('label');
+        lbl.textContent = f[1];
+        var inp = document.createElement('input');
+        inp.type = f[0] === 'admin_password' ? 'password' : 'text';
+        inp.placeholder = f[0] === 'admin_password' ? 'Admin password' : '4-digit PIN';
+        inp.maxLength = f[0] === 'admin_password' ? 64 : 4;
+        inp.style.width = '160px';
+        pinInputs[f[0]] = inp;
+        row.appendChild(lbl);
+        row.appendChild(inp);
+        section.appendChild(row);
+      });
+      var saveBtn = document.createElement('button');
+      saveBtn.className = 'success-btn mt-2';
+      saveBtn.textContent = 'Save PINs';
+      saveBtn.addEventListener('click', savePins);
+      section.appendChild(saveBtn);
+      p.appendChild(section);
+    }
+
+    function populatePinFields() {
+      PIN_FIELDS.forEach(function (f) {
+        var inp = pinInputs[f[0]];
+        if (inp && gSettings[f[0]] != null) inp.value = gSettings[f[0]];
+      });
+    }
+
+    function savePins() {
+      var payload = {};
+      PIN_FIELDS.forEach(function (f) {
+        var v = pinInputs[f[0]];
+        if (v && v.value) payload[f[0]] = v.value;
+      });
+      putSettings(payload, 'PINs saved');
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // PLAYOFFS TAB
+    // ════════════════════════════════════════════════════════════════════════════
+    var playoffsRankList, playoffsAllianceContainer;
+
+    function buildPlayoffsTab() {
+      var p = panels.playoffs;
+
+      var initSection = makeAdminSection('Initialize Bracket');
+      var initBtn = document.createElement('button');
+      initBtn.className = 'success-btn';
+      initBtn.textContent = 'Initialize Bracket';
+      initBtn.addEventListener('click', initBracket);
+      initSection.appendChild(initBtn);
+      p.appendChild(initSection);
+
+      var rankSection = makeAdminSection('Ranked Teams');
+      playoffsRankList = document.createElement('div');
+      rankSection.appendChild(playoffsRankList);
+      p.appendChild(rankSection);
+
+      var allianceSection = makeAdminSection('Alliance Selections');
+      playoffsAllianceContainer = document.createElement('div');
+      allianceSection.appendChild(playoffsAllianceContainer);
+      p.appendChild(allianceSection);
+
+      buildAllianceRows();
+    }
+
+    function renderPlayoffsRankings() {
+      if (!playoffsRankList) return;
+      while (playoffsRankList.firstChild) playoffsRankList.removeChild(playoffsRankList.firstChild);
+      gTeams.slice(0, 20).forEach(function (team, i) {
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex;gap:0.75rem;padding:0.25rem 0;font-size:0.9rem;';
+        var rank = document.createElement('span');
+        rank.className = 'rank';
+        rank.textContent = (i + 1) + '.';
+        var num = document.createElement('span');
+        num.textContent = team.number || team.team_number;
+        var name = document.createElement('span');
+        name.style.color = 'var(--text2)';
+        name.textContent = team.name || '';
+        row.appendChild(rank);
+        row.appendChild(num);
+        row.appendChild(name);
+        playoffsRankList.appendChild(row);
+      });
+    }
+
+    function buildAllianceRows() {
+      if (!playoffsAllianceContainer) return;
+      while (playoffsAllianceContainer.firstChild) playoffsAllianceContainer.removeChild(playoffsAllianceContainer.firstChild);
+
+      for (var i = 1; i <= 4; i++) {
+        (function (allianceNum) {
+          var row = document.createElement('div');
+          row.className = 'alliance-bracket-row';
+
+          var lbl = document.createElement('div');
+          lbl.textContent = 'Alliance ' + allianceNum;
+          lbl.style.fontWeight = '700';
+
+          var captainInp = makeInput('number', 'Captain #', '');
+          captainInp.placeholder = 'Captain';
+
+          var partnerInp = makeInput('number', 'Partner #', '');
+          partnerInp.placeholder = 'Partner';
+
+          var saveBtn = document.createElement('button');
+          saveBtn.textContent = 'Save';
+          saveBtn.addEventListener('click', function () {
+            saveAlliance(allianceNum, captainInp.value, partnerInp.value);
+          });
+
+          row.appendChild(lbl);
+          row.appendChild(captainInp);
+          row.appendChild(partnerInp);
+          row.appendChild(saveBtn);
+          playoffsAllianceContainer.appendChild(row);
+        })(i);
+      }
+    }
+
+    function initBracket() {
+      if (!confirm('Initialize the playoff bracket?')) return;
+      fetch('/api/bracket/init', { method: 'POST' })
+        .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+        .then(function () { showToast('Bracket initialized', 'success'); })
+        .catch(function () { showToast('Failed to initialize bracket', 'error'); });
+    }
+
+    function saveAlliance(num, captain, partner) {
+      if (!captain) { showToast('Enter captain team number', 'error'); return; }
+      fetch('/api/alliances', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ alliance_number: num, captain: parseInt(captain, 10), partner: parseInt(partner, 10) || null }),
+      })
+        .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+        .then(function () { showToast('Alliance ' + num + ' saved', 'success'); })
+        .catch(function () { showToast('Save failed', 'error'); });
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // RESET TAB
+    // ════════════════════════════════════════════════════════════════════════════
+    function buildResetTab() {
+      var p = panels.reset;
+      var section = makeAdminSection('Full Reset');
+      section.className += ' danger-section';
+
+      var warningEl = document.createElement('p');
+      warningEl.style.color = 'var(--red-light)';
+      warningEl.style.marginBottom = '0.75rem';
+      warningEl.textContent = 'This will wipe ALL match data, scores, and rankings. Teams will be preserved. Type "RESET" to confirm.';
+      section.appendChild(warningEl);
+
+      var confirmInput = makeInput('text', '', '');
+      confirmInput.placeholder = 'Type RESET to confirm';
+      confirmInput.style.width = '220px';
+      confirmInput.style.marginBottom = '0.5rem';
+      section.appendChild(confirmInput);
+
+      var resetBtn = document.createElement('button');
+      resetBtn.className = 'danger-btn';
+      resetBtn.textContent = 'Full Reset';
+      resetBtn.addEventListener('click', function () {
+        if (confirmInput.value !== 'RESET') {
+          showToast('Type exactly "RESET" to confirm', 'error');
+          return;
+        }
+        fetch('/api/admin/reset', { method: 'POST' })
+          .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+          .then(function () {
+            showToast('System reset complete', 'success');
+            confirmInput.value = '';
+            fetchAllData();
+          })
+          .catch(function () { showToast('Reset failed', 'error'); });
+      });
+      section.appendChild(resetBtn);
+      p.appendChild(section);
+    }
+
+    // ── Utility ────────────────────────────────────────────────────────────────
+    function makeAdminSection(title) {
+      var section = document.createElement('div');
+      section.className = 'admin-section';
+      var h2 = document.createElement('h2');
+      h2.textContent = title;
+      section.appendChild(h2);
+      return section;
+    }
+
+    function makeInput(type, placeholder, defaultVal) {
+      var inp = document.createElement('input');
+      inp.type = type;
+      inp.placeholder = placeholder;
+      if (defaultVal !== undefined) inp.value = defaultVal;
+      return inp;
+    }
+
+  })();
+  </script>
+</body>
+</html>

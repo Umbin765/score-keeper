@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Match Controller — Score Keeper</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .ctrl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; padding: 1rem; }
+    .ctrl-grid .full-width { grid-column: 1 / -1; }
+    .match-state-badge {
+      display: inline-block; padding: 0.3rem 0.8rem; border-radius: 6px;
+      font-weight: 700; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    .state-upcoming  { background: var(--bg4); color: var(--text2); }
+    .state-queued    { background: var(--yellow-bg); color: var(--yellow); border: 1px solid var(--yellow); }
+    .state-on_field  { background: #002a00; color: var(--green); border: 1px solid var(--green); }
+    .state-completed { background: var(--bg3); color: var(--text2); border: 1px solid var(--border); }
+    .timer-compact { font-size: 4rem; font-weight: 900; text-align: center; color: var(--timer-normal); }
+    .score-summary { display: flex; gap: 2rem; justify-content: center; align-items: center; }
+    .score-alloc { text-align: center; }
+    .score-alloc .total { font-size: 3rem; font-weight: 900; }
+    .score-alloc .label { font-size: 0.8rem; color: var(--text2); text-transform: uppercase; }
+    .breakdown-row { display: flex; justify-content: space-between; font-size: 0.9rem; padding: 0.2rem 0; border-bottom: 1px solid var(--bg3); }
+    .breakdown-row:last-child { border-bottom: none; }
+    .breakdown-label { color: var(--text2); }
+    .btn-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .loaded-match-name { font-size: 0.9rem; color: var(--text2); margin-top: 0.5rem; }
+    .status-row { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem; }
+  </style>
+</head>
+<body>
+
+  <header class="page-header" id="page-header">
+    <span class="page-title">Match Controller</span>
+  </header>
+
+  <div class="ctrl-grid" id="main-grid"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/common.js"></script>
+  <script>
+  (function () {
+    'use strict';
+
+    // ── State ──────────────────────────────────────────────────────────────────
+    var state = {
+      matches: [],
+      loadedMatch: null,
+      timerState: null,
+      scores: { red: {}, blue: {} },
+      matchEnded: false,
+    };
+
+    // ── Auth ───────────────────────────────────────────────────────────────────
+    SK.mountPinPad('control', 'Match Controller').then(function () {
+      SK.addLogoutButton(document.getElementById('page-header'));
+      init();
+    });
+
+    // ── DOM references ─────────────────────────────────────────────────────────
+    var grid; // main grid element
+    // Section elements
+    var matchSelect, loadedMatchName, matchStateBadge;
+    var queueBtn, onFieldBtn;
+    var periodLabelEl, timerEl, startBtn, pauseBtn, resumeBtn, abortBtn, advanceBtn;
+    var redTotal, blueTotal;
+    var redBreakdown, blueBreakdown;
+    var commitSection;
+
+    function init() {
+      grid = document.getElementById('main-grid');
+      buildSections();
+      fetchMatches();
+      fetchTimerState();
+      connectSocketEvents();
+    }
+
+    // ── Build UI sections ──────────────────────────────────────────────────────
+    function buildSections() {
+      // A. Match Selector
+      var sectionA = makeCard('Match Selector', true);
+      var selectRow = document.createElement('div');
+      selectRow.className = 'field-row';
+      matchSelect = document.createElement('select');
+      matchSelect.style.flex = '1';
+      var placeholder = document.createElement('option');
+      placeholder.textContent = 'Loading matches...';
+      placeholder.value = '';
+      matchSelect.appendChild(placeholder);
+      var loadBtn = document.createElement('button');
+      loadBtn.className = 'control-btn';
+      loadBtn.textContent = 'Load Match';
+      loadBtn.addEventListener('click', loadMatch);
+      selectRow.appendChild(matchSelect);
+      selectRow.appendChild(loadBtn);
+      sectionA.appendChild(selectRow);
+
+      loadedMatchName = document.createElement('div');
+      loadedMatchName.className = 'loaded-match-name';
+      loadedMatchName.textContent = 'No match loaded';
+      sectionA.appendChild(loadedMatchName);
+
+      // B. Queue Control
+      var sectionB = makeCard('Queue Control', false);
+      var statusRow = document.createElement('div');
+      statusRow.className = 'status-row';
+      var stateLabel = document.createElement('span');
+      stateLabel.style.color = 'var(--text2)';
+      stateLabel.style.fontSize = '0.9rem';
+      stateLabel.textContent = 'State:';
+      matchStateBadge = document.createElement('span');
+      matchStateBadge.className = 'match-state-badge state-upcoming';
+      matchStateBadge.textContent = 'UPCOMING';
+      statusRow.appendChild(stateLabel);
+      statusRow.appendChild(matchStateBadge);
+      sectionB.appendChild(statusRow);
+
+      var queueBtns = document.createElement('div');
+      queueBtns.className = 'btn-row';
+      queueBtn = document.createElement('button');
+      queueBtn.className = 'control-btn';
+      queueBtn.textContent = 'Call to Queue';
+      queueBtn.addEventListener('click', function () { setMatchState('QUEUED'); });
+      onFieldBtn = document.createElement('button');
+      onFieldBtn.className = 'control-btn';
+      onFieldBtn.textContent = 'Set On Field';
+      onFieldBtn.addEventListener('click', function () { setMatchState('ON_FIELD'); });
+      queueBtns.appendChild(queueBtn);
+      queueBtns.appendChild(onFieldBtn);
+      sectionB.appendChild(queueBtns);
+
+      // C. Timer
+      var sectionC = makeCard('Timer', true);
+      periodLabelEl = document.createElement('div');
+      periodLabelEl.className = 'period-label';
+      periodLabelEl.textContent = 'Waiting';
+      timerEl = document.createElement('div');
+      timerEl.className = 'timer-display';
+      timerEl.style.fontSize = '4rem';
+      timerEl.textContent = '0:00';
+      sectionC.appendChild(periodLabelEl);
+      sectionC.appendChild(timerEl);
+
+      var timerBtns = document.createElement('div');
+      timerBtns.className = 'btn-row mt-2';
+      startBtn   = makeTimerBtn('Start',   'start',   handleStart);
+      pauseBtn   = makeTimerBtn('Pause',   'pause',   handlePause);
+      resumeBtn  = makeTimerBtn('Resume',  'resume',  handleResume);
+      abortBtn   = makeTimerBtn('Abort',   'abort',   handleAbort);
+      advanceBtn = makeTimerBtn('Advance Period', 'advance', handleAdvance);
+      timerBtns.appendChild(startBtn);
+      timerBtns.appendChild(pauseBtn);
+      timerBtns.appendChild(resumeBtn);
+      timerBtns.appendChild(abortBtn);
+      timerBtns.appendChild(advanceBtn);
+      sectionC.appendChild(timerBtns);
+
+      // D. Live Scores
+      var sectionD = makeCard('Live Scores', true);
+      var scoresSummary = document.createElement('div');
+      scoresSummary.className = 'score-summary mb-2';
+
+      var redAlloc = document.createElement('div');
+      redAlloc.className = 'score-alloc';
+      redTotal = document.createElement('div');
+      redTotal.className = 'total red-text';
+      redTotal.textContent = '0';
+      var redLabel = document.createElement('div');
+      redLabel.className = 'label';
+      redLabel.textContent = 'RED';
+      redAlloc.appendChild(redTotal);
+      redAlloc.appendChild(redLabel);
+
+      var vsEl = document.createElement('div');
+      vsEl.className = 'vs-divider';
+      vsEl.textContent = 'VS';
+
+      var blueAlloc = document.createElement('div');
+      blueAlloc.className = 'score-alloc';
+      blueTotal = document.createElement('div');
+      blueTotal.className = 'total blue-text';
+      blueTotal.textContent = '0';
+      var blueLabel = document.createElement('div');
+      blueLabel.className = 'label';
+      blueLabel.textContent = 'BLUE';
+      blueAlloc.appendChild(blueTotal);
+      blueAlloc.appendChild(blueLabel);
+
+      scoresSummary.appendChild(redAlloc);
+      scoresSummary.appendChild(vsEl);
+      scoresSummary.appendChild(blueAlloc);
+      sectionD.appendChild(scoresSummary);
+
+      var breakdownGrid = document.createElement('div');
+      breakdownGrid.className = 'grid-2';
+      redBreakdown = document.createElement('div');
+      blueBreakdown = document.createElement('div');
+      redBreakdown.className = 'card red-panel';
+      blueBreakdown.className = 'card blue-panel';
+      breakdownGrid.appendChild(redBreakdown);
+      breakdownGrid.appendChild(blueBreakdown);
+      sectionD.appendChild(breakdownGrid);
+
+      // E. Post-match commit
+      commitSection = makeCard('Post-Match', false);
+      commitSection.classList.add('hidden');
+      var commitBtn = document.createElement('button');
+      commitBtn.className = 'control-btn commit w-full';
+      commitBtn.textContent = 'Commit Scores';
+      commitBtn.addEventListener('click', commitScores);
+      commitSection.appendChild(commitBtn);
+
+      // Append all sections
+      grid.appendChild(sectionA);
+      grid.appendChild(sectionB);
+      grid.appendChild(sectionC);
+      grid.appendChild(sectionD);
+      grid.appendChild(commitSection);
+    }
+
+    function makeCard(title, fullWidth) {
+      var card = document.createElement('div');
+      card.className = 'card' + (fullWidth ? ' full-width' : '');
+      var h2 = document.createElement('h2');
+      h2.textContent = title;
+      card.appendChild(h2);
+      return card;
+    }
+
+    function makeTimerBtn(label, cls, handler) {
+      var btn = document.createElement('button');
+      btn.className = 'control-btn ' + cls;
+      btn.textContent = label;
+      btn.addEventListener('click', handler);
+      return btn;
+    }
+
+    // ── Fetch helpers ──────────────────────────────────────────────────────────
+    function fetchMatches() {
+      fetch('/api/matches')
+        .then(function (r) { return r.json(); })
+        .then(function (matches) {
+          state.matches = matches;
+          populateMatchSelect(matches);
+        })
+        .catch(function () { showToast('Failed to load matches', 'error'); });
+    }
+
+    function fetchTimerState() {
+      fetch('/api/timer')
+        .then(function (r) { return r.json(); })
+        .then(function (ts) {
+          state.timerState = ts;
+          SK.applyTimerState(ts, timerEl, periodLabelEl);
+          if (ts.matchId) {
+            fetchScores(ts.matchId);
+            updateLoadedMatchDisplay(ts.matchId);
+          }
+        })
+        .catch(function () {});
+    }
+
+    function fetchScores(matchId) {
+      fetch('/api/matches/' + matchId + '/scores')
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          updateScoreDisplay(data);
+        })
+        .catch(function () {});
+    }
+
+    // ── Match selector ─────────────────────────────────────────────────────────
+    function populateMatchSelect(matches) {
+      while (matchSelect.firstChild) matchSelect.removeChild(matchSelect.firstChild);
+      var ph = document.createElement('option');
+      ph.value = '';
+      ph.textContent = matches.length ? '-- Select Match --' : '(No matches)';
+      matchSelect.appendChild(ph);
+      matches.forEach(function (m) {
+        var opt = document.createElement('option');
+        opt.value = m.id;
+        var teams = 'R:' + (m.red1 || '?') + '/' + (m.red2 || '?') + ' vs B:' + (m.blue1 || '?') + '/' + (m.blue2 || '?');
+        opt.textContent = 'Match ' + m.match_number + ' — ' + teams + ' [' + m.state + ']';
+        matchSelect.appendChild(opt);
+      });
+    }
+
+    function loadMatch() {
+      var id = matchSelect.value;
+      if (!id) { showToast('Select a match first', 'error'); return; }
+      fetch('/api/matches/' + id + '/load', { method: 'POST' })
+        .then(function (r) {
+          if (!r.ok) throw new Error('Failed');
+          return r.json();
+        })
+        .then(function () {
+          showToast('Match loaded', 'success');
+          updateLoadedMatchDisplay(parseInt(id, 10));
+        })
+        .catch(function () { showToast('Failed to load match', 'error'); });
+    }
+
+    function updateLoadedMatchDisplay(matchId) {
+      state.loadedMatch = matchId;
+      var m = state.matches.find(function (x) { return x.id === matchId; });
+      if (m) {
+        loadedMatchName.textContent = 'Loaded: Match ' + m.match_number +
+          ' — R:' + (m.red1 || '?') + '/' + (m.red2 || '?') +
+          ' vs B:' + (m.blue1 || '?') + '/' + (m.blue2 || '?');
+        updateMatchStateBadge(m.state);
+      }
+    }
+
+    function updateMatchStateBadge(st) {
+      matchStateBadge.className = 'match-state-badge state-' + (st || 'upcoming').toLowerCase();
+      matchStateBadge.textContent = (st || 'UPCOMING').toUpperCase();
+    }
+
+    // ── Queue control ──────────────────────────────────────────────────────────
+    function setMatchState(newState) {
+      if (!state.loadedMatch) { showToast('No match loaded', 'error'); return; }
+      fetch('/api/matches/' + state.loadedMatch + '/state', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ state: newState }),
+      })
+        .then(function (r) {
+          if (!r.ok) throw new Error('Failed');
+          return r.json();
+        })
+        .then(function () {
+          showToast('State → ' + newState, 'success');
+          updateMatchStateBadge(newState);
+          fetchMatches();
+        })
+        .catch(function () { showToast('Failed to set state', 'error'); });
+    }
+
+    // ── Timer controls ─────────────────────────────────────────────────────────
+    function timerPost(endpoint) {
+      return fetch('/api/timer/' + endpoint, { method: 'POST' })
+        .then(function (r) { if (!r.ok) throw new Error('Failed'); return r.json(); })
+        .catch(function (e) { showToast('Timer error: ' + e.message, 'error'); });
+    }
+
+    function handleStart()   { timerPost('start'); }
+    function handlePause()   { timerPost('pause'); }
+    function handleResume()  { timerPost('resume'); }
+    function handleAdvance() { timerPost('advance'); }
+    function handleAbort() {
+      if (!confirm('Abort the current match timer?')) return;
+      timerPost('abort');
+    }
+
+    // ── Score display ──────────────────────────────────────────────────────────
+    function updateScoreDisplay(data) {
+      if (!data) return;
+      var red = data.red || {};
+      var blue = data.blue || {};
+      redTotal.textContent  = red.total  != null ? red.total  : 0;
+      blueTotal.textContent = blue.total != null ? blue.total : 0;
+      renderBreakdown(redBreakdown,  red,  'RED');
+      renderBreakdown(blueBreakdown, blue, 'BLUE');
+    }
+
+    function renderBreakdown(el, scores, label) {
+      while (el.firstChild) el.removeChild(el.firstChild);
+      var titleEl = document.createElement('div');
+      titleEl.style.fontWeight = '700';
+      titleEl.style.marginBottom = '0.5rem';
+      titleEl.textContent = label;
+      el.appendChild(titleEl);
+
+      var fields = [
+        ['Auto Classified', 'auto_classified'],
+        ['Auto Overflow',   'auto_overflow'],
+        ['Auto Leave',      'auto_leave'],
+        ['Auto Pattern',    'auto_pattern'],
+        ['Teleop Classified','teleop_classified'],
+        ['Teleop Overflow', 'teleop_overflow'],
+        ['Teleop Balls',    'teleop_balls'],
+        ['Park',            'park'],
+        ['Penalties',       'penalties'],
+      ];
+      fields.forEach(function (f) {
+        var row = document.createElement('div');
+        row.className = 'breakdown-row';
+        var lbl = document.createElement('span');
+        lbl.className = 'breakdown-label';
+        lbl.textContent = f[0];
+        var val = document.createElement('span');
+        val.textContent = scores[f[1]] != null ? scores[f[1]] : 0;
+        row.appendChild(lbl);
+        row.appendChild(val);
+        el.appendChild(row);
+      });
+    }
+
+    // ── Commit scores ──────────────────────────────────────────────────────────
+    function commitScores() {
+      if (!state.loadedMatch) { showToast('No match loaded', 'error'); return; }
+      fetch('/api/matches/' + state.loadedMatch + '/commit', { method: 'POST' })
+        .then(function (r) { if (!r.ok) throw new Error('Failed'); return r.json(); })
+        .then(function () {
+          showToast('Scores committed', 'success');
+          commitSection.classList.add('hidden');
+          state.matchEnded = false;
+          fetchMatches();
+        })
+        .catch(function () { showToast('Failed to commit scores', 'error'); });
+    }
+
+    // ── Socket events ──────────────────────────────────────────────────────────
+    function connectSocketEvents() {
+      var socket = SK.connectSocket();
+      if (!socket) return;
+
+      socket.on('timer_tick', function (ts) {
+        state.timerState = ts;
+        SK.applyTimerState(ts, timerEl, periodLabelEl);
+      });
+
+      socket.on('period_change', function (ts) {
+        state.timerState = ts;
+        SK.applyTimerState(ts, timerEl, periodLabelEl);
+        SK.playBuzzer();
+      });
+
+      socket.on('match_start', function (ts) {
+        state.matchEnded = false;
+        commitSection.classList.add('hidden');
+        SK.applyTimerState(ts, timerEl, periodLabelEl);
+      });
+
+      socket.on('match_end', function (data) {
+        state.matchEnded = true;
+        commitSection.classList.remove('hidden');
+        if (data && data.scores) updateScoreDisplay(data.scores);
+        showToast('Match ended', 'success');
+      });
+
+      socket.on('score_update', function (data) {
+        updateScoreDisplay(data);
+      });
+
+      socket.on('match_loaded', function (data) {
+        if (data && data.matchId) {
+          state.loadedMatch = data.matchId;
+          updateLoadedMatchDisplay(data.matchId);
+        }
+        fetchMatches();
+      });
+    }
+
+  })();
+  </script>
+</body>
+</html>

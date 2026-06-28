@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Queue Display — Score Keeper</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    html, body { height: 100%; }
+
+    #queue-root {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      padding: 1.5rem 2rem;
+      box-sizing: border-box;
+    }
+
+    #queue-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+    }
+    #queue-header h1 {
+      font-size: clamp(1.2rem, 3vw, 2rem);
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text2);
+    }
+
+    .queue-section {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem 1.75rem;
+      margin-bottom: 1.25rem;
+    }
+    .queue-section.queue-now {
+      background: var(--yellow-bg);
+    }
+    .queue-section-title {
+      font-size: clamp(0.9rem, 2.5vw, 1.5rem);
+      color: var(--text2);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 0.75rem;
+      font-weight: 700;
+    }
+    .queue-match-num {
+      font-size: clamp(1rem, 2vw, 1.4rem);
+      color: var(--text2);
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+    .queue-teams-row {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .queue-team {
+      font-size: clamp(2rem, 6vw, 4rem);
+      font-weight: 900;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+    }
+    .queue-team.red  { color: var(--red-light);  background: var(--red-bg); }
+    .queue-team.blue { color: var(--blue-light); background: var(--blue-bg); }
+
+    .queue-divider {
+      font-size: 1.5rem;
+      color: var(--border);
+      font-weight: 300;
+      padding: 0 0.5rem;
+      align-self: center;
+    }
+
+    /* Upcoming section list */
+    .upcoming-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    .upcoming-item {
+      background: var(--bg3);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .upcoming-num {
+      font-size: clamp(0.85rem, 1.8vw, 1.1rem);
+      color: var(--text2);
+      font-weight: 600;
+      min-width: 6ch;
+    }
+    .upcoming-teams {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .upcoming-team {
+      font-size: clamp(1.2rem, 3vw, 2rem);
+      font-weight: 900;
+      padding: 0.25rem 0.6rem;
+      border-radius: 6px;
+    }
+    .upcoming-team.red  { color: var(--red-light);  background: var(--red-bg); }
+    .upcoming-team.blue { color: var(--blue-light); background: var(--blue-bg); }
+
+    .no-match {
+      color: var(--text2);
+      font-size: 1rem;
+      font-style: italic;
+      padding: 0.5rem 0;
+    }
+  </style>
+</head>
+<body>
+  <div id="queue-root" class="hidden">
+    <div id="queue-header">
+      <h1>Queue Display</h1>
+      <div id="header-controls"></div>
+    </div>
+
+    <div class="queue-section" id="section-onfield">
+      <div class="queue-section-title">On Field Now</div>
+      <div id="onfield-content"></div>
+    </div>
+
+    <div class="queue-section" id="section-queue"></div>
+
+    <div class="queue-section" id="section-upcoming">
+      <div class="queue-section-title">Upcoming</div>
+      <div id="upcoming-content" class="upcoming-list"></div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/common.js"></script>
+  <script>
+    (function () {
+      var root           = document.getElementById('queue-root');
+      var headerControls = document.getElementById('header-controls');
+      var onfieldContent = document.getElementById('onfield-content');
+      var sectionQueue   = document.getElementById('section-queue');
+      var upcomingContent= document.getElementById('upcoming-content');
+
+      // ── DOM helpers ─────────────────────────────────────────────────────────
+
+      function makeTeamEl(num, color, size) {
+        var el = document.createElement('div');
+        el.className = (size === 'large' ? 'queue-team' : 'upcoming-team') + ' ' + color;
+        el.textContent = num || '?';
+        return el;
+      }
+
+      function makeMatchNumEl(matchNum, large) {
+        var el = document.createElement('div');
+        el.className = large ? 'queue-match-num' : 'upcoming-num';
+        el.textContent = 'Match ' + (matchNum || '—');
+        return el;
+      }
+
+      function renderTeamsRow(red, blue, size) {
+        var row = document.createElement('div');
+        row.className = size === 'large' ? 'queue-teams-row' : 'upcoming-teams';
+
+        (red || []).forEach(function (t) { row.appendChild(makeTeamEl(t, 'red', size)); });
+
+        if (size === 'large') {
+          var div = document.createElement('div');
+          div.className = 'queue-divider';
+          div.textContent = 'vs';
+          row.appendChild(div);
+        }
+
+        (blue || []).forEach(function (t) { row.appendChild(makeTeamEl(t, 'blue', size)); });
+        return row;
+      }
+
+      // ── Render queue data ────────────────────────────────────────────────────
+
+      function renderOnField(match) {
+        while (onfieldContent.firstChild) onfieldContent.removeChild(onfieldContent.firstChild);
+        if (!match) {
+          var msg = document.createElement('div');
+          msg.className = 'no-match';
+          msg.textContent = 'No match on field';
+          onfieldContent.appendChild(msg);
+          return;
+        }
+        onfieldContent.appendChild(makeMatchNumEl(match.matchNumber, true));
+        onfieldContent.appendChild(renderTeamsRow(match.red, match.blue, 'large'));
+      }
+
+      function renderQueueNow(match) {
+        while (sectionQueue.firstChild) sectionQueue.removeChild(sectionQueue.firstChild);
+        if (!match) {
+          sectionQueue.classList.add('hidden');
+          return;
+        }
+        sectionQueue.classList.remove('hidden');
+        sectionQueue.classList.add('queue-now');
+
+        var title = document.createElement('div');
+        title.className = 'queue-section-title';
+        title.textContent = 'Report to Queue Now';
+        sectionQueue.appendChild(title);
+        sectionQueue.appendChild(makeMatchNumEl(match.matchNumber, true));
+        sectionQueue.appendChild(renderTeamsRow(match.red, match.blue, 'large'));
+      }
+
+      function renderUpcoming(matches) {
+        while (upcomingContent.firstChild) upcomingContent.removeChild(upcomingContent.firstChild);
+        if (!matches || matches.length === 0) {
+          var msg = document.createElement('div');
+          msg.className = 'no-match';
+          msg.textContent = 'No upcoming matches';
+          upcomingContent.appendChild(msg);
+          return;
+        }
+        matches.slice(0, 2).forEach(function (m) {
+          var item = document.createElement('div');
+          item.className = 'upcoming-item';
+          item.appendChild(makeMatchNumEl(m.matchNumber, false));
+          item.appendChild(renderTeamsRow(m.red, m.blue, 'small'));
+          upcomingContent.appendChild(item);
+        });
+      }
+
+      function applyQueueData(data) {
+        if (!data) return;
+        renderOnField(data.onField || null);
+        renderQueueNow(data.queued || null);
+        renderUpcoming(data.upcoming || []);
+      }
+
+      function fetchAndRender() {
+        fetch('/api/queue').then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        }).then(function (data) {
+          applyQueueData(data);
+        }).catch(function (e) {
+          console.error('Queue fetch error:', e);
+        });
+      }
+
+      // ── Auth + init ──────────────────────────────────────────────────────────
+
+      SK.mountPinPad('queue', 'Queue Display').then(function () {
+        root.classList.remove('hidden');
+        SK.addLogoutButton(headerControls);
+        fetchAndRender();
+
+        var socket = SK.connectSocket();
+        if (socket) {
+          socket.on('queue_update', function () {
+            fetchAndRender();
+          });
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

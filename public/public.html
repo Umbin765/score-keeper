@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Public View — Score Keeper</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    body { padding-bottom: 3rem; }
+
+    .page-title {
+      font-size: 1.6rem;
+      font-weight: 900;
+      padding: 1.25rem 1rem 0.5rem;
+      letter-spacing: -0.01em;
+    }
+
+    .section-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.25rem;
+      margin-bottom: 1.25rem;
+    }
+    .section-card h2 {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text2);
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    /* Live match */
+    #live-section { border-color: var(--blue-border); }
+    #live-section h2 { color: var(--blue-light); }
+
+    .live-timer {
+      font-size: clamp(3rem, 12vw, 6rem);
+      font-weight: 900;
+      font-family: var(--font-mono);
+      color: var(--timer-normal);
+      text-align: center;
+      line-height: 1;
+    }
+    .live-timer.endgame { color: var(--timer-endgame); }
+    .live-timer.final   { color: var(--timer-final); }
+
+    .live-period {
+      text-align: center;
+      font-size: 0.9rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text2);
+      margin-bottom: 0.75rem;
+    }
+
+    .live-scores {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+      margin-top: 0.75rem;
+    }
+    .live-alliance {
+      border-radius: 8px;
+      padding: 0.75rem;
+      text-align: center;
+    }
+    .live-alliance.red  { background: var(--red-bg);  border: 1px solid var(--red-border); }
+    .live-alliance.blue { background: var(--blue-bg); border: 1px solid var(--blue-border); }
+    .live-alliance-label {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 0.3rem;
+    }
+    .live-alliance.red  .live-alliance-label { color: var(--red-light); }
+    .live-alliance.blue .live-alliance-label { color: var(--blue-light); }
+    .live-score-num {
+      font-size: clamp(2rem, 8vw, 3.5rem);
+      font-weight: 900;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+    }
+    .live-alliance.red  .live-score-num { color: var(--red-light); }
+    .live-alliance.blue .live-score-num { color: var(--blue-light); }
+
+    .live-no-match {
+      text-align: center;
+      color: var(--text2);
+      padding: 1.5rem 0;
+      font-size: 0.95rem;
+    }
+
+    /* Upcoming */
+    .upcoming-row {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.6rem 0;
+      border-bottom: 1px solid var(--bg3);
+      flex-wrap: wrap;
+    }
+    .upcoming-row:last-child { border-bottom: none; }
+    .upcoming-match-num {
+      font-size: 0.85rem;
+      color: var(--text2);
+      min-width: 6ch;
+      font-weight: 600;
+    }
+    .upcoming-chips { display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center; }
+    .team-chip-sm {
+      font-size: 0.85rem;
+      font-weight: 700;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+    }
+    .team-chip-sm.red  { color: var(--red-light);  background: var(--red-bg); }
+    .team-chip-sm.blue { color: var(--blue-light); background: var(--blue-bg); }
+    .vs-label { font-size: 0.75rem; color: var(--border); }
+
+    /* Rankings table */
+    .rank-num { color: var(--yellow); font-weight: 700; }
+
+    /* Schedule table */
+    .match-state-chip {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      padding: 0.1rem 0.45rem;
+      border-radius: 4px;
+      background: var(--bg3);
+      color: var(--text2);
+    }
+    .match-state-chip.complete { background: #002a00; color: var(--green); }
+    .match-state-chip.active   { background: var(--blue-bg); color: var(--blue-light); }
+
+    /* Bracket section */
+    .bracket-round-wrap {
+      display: flex;
+      gap: 0.75rem;
+      overflow-x: auto;
+      padding-bottom: 0.5rem;
+    }
+    .bracket-col { min-width: 160px; flex-shrink: 0; }
+    .bracket-col h3 {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text2);
+      margin-bottom: 0.5rem;
+      font-weight: 700;
+    }
+    .bracket-card {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.5rem 0.6rem;
+      margin-bottom: 0.5rem;
+      font-size: 0.85rem;
+    }
+    .bracket-card .bc-red  { color: var(--red-light);  font-weight: 700; }
+    .bracket-card .bc-blue { color: var(--blue-light); font-weight: 700; }
+    .bracket-card .bc-win  { color: var(--green); font-size: 0.7rem; margin-top: 0.2rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="page-title">Score Keeper</div>
+
+    <!-- Live Match -->
+    <div class="section-card" id="live-section">
+      <h2>Live Match</h2>
+      <div id="live-content"></div>
+    </div>
+
+    <!-- Upcoming -->
+    <div class="section-card">
+      <h2>Upcoming Matches</h2>
+      <div id="upcoming-content"></div>
+    </div>
+
+    <!-- Rankings -->
+    <div class="section-card">
+      <h2>Rankings</h2>
+      <div id="rankings-content"></div>
+    </div>
+
+    <!-- Schedule -->
+    <div class="section-card">
+      <h2>Schedule</h2>
+      <div id="schedule-content" style="overflow-x:auto;"></div>
+    </div>
+
+    <!-- Bracket -->
+    <div class="section-card" id="bracket-section">
+      <h2>Playoff Bracket</h2>
+      <div id="bracket-content" class="bracket-round-wrap"></div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/common.js"></script>
+  <script>
+    (function () {
+      // State
+      var liveState = null;
+      var liveScore = null;
+
+      // ── Element refs ─────────────────────────────────────────────────────────
+      var liveContent     = document.getElementById('live-content');
+      var upcomingContent = document.getElementById('upcoming-content');
+      var rankingsContent = document.getElementById('rankings-content');
+      var scheduleContent = document.getElementById('schedule-content');
+      var bracketContent  = document.getElementById('bracket-content');
+      var bracketSection  = document.getElementById('bracket-section');
+
+      // ── Timer elements (created in live render) ──────────────────────────────
+      var timerEl  = null;
+      var periodEl = null;
+
+      // ── Generic DOM helpers ──────────────────────────────────────────────────
+
+      function clear(el) {
+        while (el.firstChild) el.removeChild(el.firstChild);
+      }
+
+      function teamChip(num, color) {
+        var el = document.createElement('span');
+        el.className = 'team-chip-sm ' + color;
+        el.textContent = num || '?';
+        return el;
+      }
+
+      function text(tag, content, cls) {
+        var el = document.createElement(tag);
+        if (cls) el.className = cls;
+        el.textContent = content;
+        return el;
+      }
+
+      // ── Live section ─────────────────────────────────────────────────────────
+
+      function buildLiveNoMatch() {
+        clear(liveContent);
+        timerEl = null;
+        periodEl = null;
+        var msg = document.createElement('div');
+        msg.className = 'live-no-match';
+        msg.textContent = 'No match in progress';
+        liveContent.appendChild(msg);
+      }
+
+      function buildLiveMatch(scoreData) {
+        clear(liveContent);
+
+        periodEl = document.createElement('div');
+        periodEl.className = 'live-period';
+        periodEl.textContent = 'Waiting';
+
+        timerEl = document.createElement('div');
+        timerEl.className = 'live-timer';
+        timerEl.textContent = '0:00';
+
+        var scores = document.createElement('div');
+        scores.className = 'live-scores';
+
+        var redDiv  = document.createElement('div');
+        redDiv.className = 'live-alliance red';
+        var redLabel = document.createElement('div');
+        redLabel.className = 'live-alliance-label';
+        redLabel.textContent = 'Red';
+        var redNum = document.createElement('div');
+        redNum.className = 'live-score-num';
+        redNum.id = 'pub-red-score';
+        redNum.textContent = scoreData && scoreData.red ? scoreData.red.score : '0';
+        redDiv.appendChild(redLabel);
+        redDiv.appendChild(redNum);
+
+        var blueDiv = document.createElement('div');
+        blueDiv.className = 'live-alliance blue';
+        var blueLabel = document.createElement('div');
+        blueLabel.className = 'live-alliance-label';
+        blueLabel.textContent = 'Blue';
+        var blueNum = document.createElement('div');
+        blueNum.className = 'live-score-num';
+        blueNum.id = 'pub-blue-score';
+        blueNum.textContent = scoreData && scoreData.blue ? scoreData.blue.score : '0';
+        blueDiv.appendChild(blueLabel);
+        blueDiv.appendChild(blueNum);
+
+        scores.appendChild(redDiv);
+        scores.appendChild(blueDiv);
+
+        liveContent.appendChild(periodEl);
+        liveContent.appendChild(timerEl);
+        liveContent.appendChild(scores);
+      }
+
+      function updateLiveScore(data) {
+        var rEl = document.getElementById('pub-red-score');
+        var bEl = document.getElementById('pub-blue-score');
+        if (rEl && data && data.red) rEl.textContent = data.red.score;
+        if (bEl && data && data.blue) bEl.textContent = data.blue.score;
+      }
+
+      // ── Upcoming ─────────────────────────────────────────────────────────────
+
+      function renderUpcoming(matches) {
+        clear(upcomingContent);
+        var upcoming = (matches || []).filter(function (m) { return m.state === 'UPCOMING'; }).slice(0, 3);
+        if (upcoming.length === 0) {
+          upcomingContent.appendChild(text('div', 'No upcoming matches', 'live-no-match'));
+          return;
+        }
+        upcoming.forEach(function (m) {
+          var row = document.createElement('div');
+          row.className = 'upcoming-row';
+
+          var num = document.createElement('div');
+          num.className = 'upcoming-match-num';
+          num.textContent = 'Match ' + (m.matchNumber || m.id || '?');
+
+          var chips = document.createElement('div');
+          chips.className = 'upcoming-chips';
+          (m.red || []).forEach(function (t) { chips.appendChild(teamChip(t, 'red')); });
+          var vs = document.createElement('span');
+          vs.className = 'vs-label';
+          vs.textContent = 'vs';
+          chips.appendChild(vs);
+          (m.blue || []).forEach(function (t) { chips.appendChild(teamChip(t, 'blue')); });
+
+          row.appendChild(num);
+          row.appendChild(chips);
+          upcomingContent.appendChild(row);
+        });
+      }
+
+      // ── Rankings ─────────────────────────────────────────────────────────────
+
+      function renderRankings(rankings) {
+        clear(rankingsContent);
+        if (!rankings || rankings.length === 0) {
+          rankingsContent.appendChild(text('div', 'No rankings yet', 'live-no-match'));
+          return;
+        }
+
+        var wrap = document.createElement('div');
+        wrap.style.overflowX = 'auto';
+
+        var table = document.createElement('table');
+        table.className = 'data-table';
+
+        var thead = document.createElement('thead');
+        var hrow = document.createElement('tr');
+        ['Rank', 'Team #', 'Name', 'RP', 'Avg Score', 'W', 'L', 'T'].forEach(function (h) {
+          var th = document.createElement('th');
+          th.textContent = h;
+          hrow.appendChild(th);
+        });
+        thead.appendChild(hrow);
+        table.appendChild(thead);
+
+        var tbody = document.createElement('tbody');
+        rankings.forEach(function (r, i) {
+          var tr = document.createElement('tr');
+          function td(val, cls) {
+            var cell = document.createElement('td');
+            if (cls) cell.className = cls;
+            cell.textContent = val != null ? val : '—';
+            return cell;
+          }
+          tr.appendChild(td(i + 1, 'rank-num'));
+          tr.appendChild(td(r.teamNumber || r.team));
+          tr.appendChild(td(r.teamName || r.name || ''));
+          tr.appendChild(td(r.rp != null ? r.rp : '—'));
+          tr.appendChild(td(r.avgScore != null ? Number(r.avgScore).toFixed(1) : '—'));
+          tr.appendChild(td(r.wins != null ? r.wins : '—'));
+          tr.appendChild(td(r.losses != null ? r.losses : '—'));
+          tr.appendChild(td(r.ties != null ? r.ties : '—'));
+          tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        wrap.appendChild(table);
+        rankingsContent.appendChild(wrap);
+      }
+
+      // ── Schedule ──────────────────────────────────────────────────────────────
+
+      function stateLabel(state, winner) {
+        if (state === 'COMPLETE' || state === 'SCORED') {
+          var chip = document.createElement('span');
+          chip.className = 'match-state-chip complete';
+          chip.textContent = winner ? (winner.toUpperCase() + ' WINS') : 'Complete';
+          return chip;
+        }
+        if (state === 'IN_PROGRESS' || state === 'ACTIVE') {
+          var chip = document.createElement('span');
+          chip.className = 'match-state-chip active';
+          chip.textContent = 'Live';
+          return chip;
+        }
+        var chip = document.createElement('span');
+        chip.className = 'match-state-chip';
+        chip.textContent = state || '—';
+        return chip;
+      }
+
+      function renderSchedule(matches) {
+        clear(scheduleContent);
+        if (!matches || matches.length === 0) {
+          scheduleContent.appendChild(text('div', 'No matches scheduled', 'live-no-match'));
+          return;
+        }
+
+        var table = document.createElement('table');
+        table.className = 'data-table';
+
+        var thead = document.createElement('thead');
+        var hrow = document.createElement('tr');
+        ['Match', 'Red Alliance', 'Blue Alliance', 'Result'].forEach(function (h) {
+          var th = document.createElement('th');
+          th.textContent = h;
+          hrow.appendChild(th);
+        });
+        thead.appendChild(hrow);
+        table.appendChild(thead);
+
+        var tbody = document.createElement('tbody');
+        matches.forEach(function (m) {
+          var tr = document.createElement('tr');
+
+          var numTd = document.createElement('td');
+          numTd.textContent = 'M' + (m.matchNumber || m.id || '?');
+          tr.appendChild(numTd);
+
+          var redTd = document.createElement('td');
+          var redWrap = document.createElement('span');
+          redWrap.style.display = 'flex';
+          redWrap.style.gap = '4px';
+          redWrap.style.flexWrap = 'wrap';
+          (m.red || []).forEach(function (t) { redWrap.appendChild(teamChip(t, 'red')); });
+          redTd.appendChild(redWrap);
+          tr.appendChild(redTd);
+
+          var blueTd = document.createElement('td');
+          var blueWrap = document.createElement('span');
+          blueWrap.style.display = 'flex';
+          blueWrap.style.gap = '4px';
+          blueWrap.style.flexWrap = 'wrap';
+          (m.blue || []).forEach(function (t) { blueWrap.appendChild(teamChip(t, 'blue')); });
+          blueTd.appendChild(blueWrap);
+          tr.appendChild(blueTd);
+
+          var resultTd = document.createElement('td');
+          resultTd.appendChild(stateLabel(m.state, m.winner));
+          tr.appendChild(resultTd);
+
+          tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        scheduleContent.appendChild(table);
+      }
+
+      // ── Bracket ───────────────────────────────────────────────────────────────
+
+      function renderBracket(data) {
+        clear(bracketContent);
+        if (!data || !data.matches || data.matches.length === 0) {
+          bracketSection.classList.add('hidden');
+          return;
+        }
+        bracketSection.classList.remove('hidden');
+
+        var byRound = {};
+        data.matches.forEach(function (m) {
+          var r = m.bracketRound || m.bracket_round || 'Round 1';
+          if (!byRound[r]) byRound[r] = [];
+          byRound[r].push(m);
+        });
+
+        Object.keys(byRound).forEach(function (round) {
+          var col = document.createElement('div');
+          col.className = 'bracket-col';
+
+          var h3 = document.createElement('h3');
+          h3.textContent = round;
+          col.appendChild(h3);
+
+          byRound[round].forEach(function (m) {
+            var card = document.createElement('div');
+            card.className = 'bracket-card';
+
+            var redEl = document.createElement('div');
+            redEl.className = 'bc-red';
+            redEl.textContent = 'Red: ' + (m.redAlliance || m.red || '?');
+
+            var blueEl = document.createElement('div');
+            blueEl.className = 'bc-blue';
+            blueEl.textContent = 'Blue: ' + (m.blueAlliance || m.blue || '?');
+
+            card.appendChild(redEl);
+            card.appendChild(blueEl);
+
+            if (m.winner) {
+              var winEl = document.createElement('div');
+              winEl.className = 'bc-win';
+              winEl.textContent = 'Winner: ' + m.winner;
+              card.appendChild(winEl);
+            }
+
+            col.appendChild(card);
+          });
+
+          bracketContent.appendChild(col);
+        });
+      }
+
+      // ── Data fetching ────────────────────────────────────────────────────────
+
+      function fetchAll() {
+        fetch('/api/queue').then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+          if (d && d.onField) {
+            buildLiveMatch(null);
+          } else {
+            buildLiveNoMatch();
+          }
+        }).catch(function () { buildLiveNoMatch(); });
+
+        fetch('/api/matches').then(function (r) { return r.ok ? r.json() : []; }).then(function (d) {
+          renderUpcoming(d);
+          renderSchedule(d);
+        }).catch(function () {});
+
+        fetch('/api/rankings').then(function (r) { return r.ok ? r.json() : []; }).then(function (d) {
+          renderRankings(d);
+        }).catch(function () {});
+
+        fetch('/api/bracket').then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+          renderBracket(d);
+        }).catch(function () { bracketSection.classList.add('hidden'); });
+      }
+
+      // ── Socket ───────────────────────────────────────────────────────────────
+
+      var socket = SK.connectSocket();
+      if (socket) {
+        socket.on('timer_tick', function (state) {
+          if (timerEl) SK.applyTimerState(state, timerEl, null);
+        });
+
+        socket.on('period_change', function (state) {
+          SK.applyTimerState(state, timerEl, periodEl);
+          SK.playBuzzer();
+        });
+
+        socket.on('match_start', function (state) {
+          buildLiveMatch(null);
+          if (state) SK.applyTimerState(state, timerEl, periodEl);
+        });
+
+        socket.on('match_end', function () {
+          buildLiveNoMatch();
+        });
+
+        socket.on('match_abort', function () {
+          buildLiveNoMatch();
+        });
+
+        socket.on('score_update', function (data) {
+          updateLiveScore(data);
+        });
+
+        socket.on('rankings_update', function (data) {
+          if (data) renderRankings(data);
+          else fetch('/api/rankings').then(function (r) { return r.ok ? r.json() : []; }).then(renderRankings).catch(function () {});
+        });
+
+        socket.on('queue_update', function () {
+          fetch('/api/matches').then(function (r) { return r.ok ? r.json() : []; }).then(function (d) {
+            renderUpcoming(d);
+            renderSchedule(d);
+          }).catch(function () {});
+        });
+
+        socket.on('match_state_change', function () {
+          fetch('/api/matches').then(function (r) { return r.ok ? r.json() : []; }).then(function (d) {
+            renderUpcoming(d);
+            renderSchedule(d);
+          }).catch(function () {});
+        });
+
+        socket.on('bracket_update', function (data) {
+          renderBracket(data);
+        });
+      }
+
+      // ── Init ─────────────────────────────────────────────────────────────────
+      buildLiveNoMatch();
+      fetchAll();
+    })();
+  </script>
+</body>
+</html>

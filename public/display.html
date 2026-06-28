@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Display — Score Keeper</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    html, body {
+      height: 100%;
+      overflow: hidden;
+    }
+
+    /* ── Root layout ── */
+    #display-root {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      width: 100vw;
+      background: var(--bg);
+      position: relative;
+    }
+
+    /* ── Top bar: period + timer ── */
+    #top-bar {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5vh 2vw 1vh;
+      gap: 0.3rem;
+    }
+
+    .period-label {
+      font-size: clamp(1rem, 3vw, 2rem);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--text2);
+    }
+    .period-label.auto      { color: var(--text2); }
+    .period-label.teleop    { color: var(--blue-light); }
+    .period-label.endgame   { color: var(--yellow); }
+    .period-label.transition{ color: var(--text2); }
+    .period-label.buzzer    { color: var(--green); }
+
+    .timer-display {
+      font-size: clamp(4rem, 14vw, 12rem);
+      font-weight: 900;
+      font-variant-numeric: tabular-nums;
+      font-family: var(--font-mono);
+      color: var(--timer-normal);
+      line-height: 1;
+      letter-spacing: -0.02em;
+    }
+    .timer-display.endgame { color: var(--timer-endgame); }
+    .timer-display.final   { color: var(--timer-final); }
+
+    /* ── Score row ── */
+    #score-row {
+      display: flex;
+      flex: 1;
+      min-height: 0;
+      gap: 1vw;
+      padding: 0.5vh 2vw 1vh;
+    }
+
+    .alliance-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      border-radius: 12px;
+      gap: 1vh;
+      padding: 1vh 1vw;
+    }
+    .alliance-panel.red-panel  { background: var(--red-bg);  border: 2px solid var(--red-border); }
+    .alliance-panel.blue-panel { background: var(--blue-bg); border: 2px solid var(--blue-border); }
+
+    .alliance-label {
+      font-size: clamp(1.2rem, 3vw, 2.2rem);
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+    }
+    .alliance-panel.red-panel  .alliance-label { color: var(--red-light); }
+    .alliance-panel.blue-panel .alliance-label { color: var(--blue-light); }
+
+    .team-numbers {
+      display: flex;
+      gap: 1vw;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .team-chip {
+      font-size: clamp(1rem, 2.5vw, 2rem);
+      font-weight: 700;
+      padding: 0.3rem 0.8rem;
+      border-radius: 6px;
+      font-family: var(--font-mono);
+    }
+    .red-panel .team-chip  { background: rgba(204,0,0,0.25); color: var(--red-light); }
+    .blue-panel .team-chip { background: rgba(0,68,204,0.25); color: var(--blue-light); }
+
+    .score-value {
+      font-size: clamp(4rem, 13vw, 11rem);
+      font-weight: 900;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+    }
+    .red-panel  .score-value { color: var(--red-light); }
+    .blue-panel .score-value { color: var(--blue-light); }
+
+    .rp-row {
+      display: flex;
+      gap: 0.5vw;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .rp-badge {
+      font-size: clamp(0.7rem, 1.5vw, 1rem);
+      padding: 0.25rem 0.75rem;
+    }
+
+    /* ── Overlays ── */
+    .overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      backdrop-filter: blur(4px);
+    }
+    .overlay-box {
+      font-size: clamp(2rem, 6vw, 5rem);
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      text-align: center;
+      padding: 2rem 4rem;
+      border-radius: 16px;
+    }
+    .overlay-complete {
+      background: rgba(0,40,0,0.9);
+      color: var(--green);
+      border: 3px solid var(--green);
+    }
+    .overlay-waiting {
+      background: rgba(13,13,13,0.9);
+      color: var(--text2);
+      border: 3px solid var(--border);
+    }
+  </style>
+</head>
+<body>
+  <div id="display-root">
+    <div id="top-bar">
+      <div id="period-label" class="period-label">Waiting</div>
+      <div id="timer-display" class="timer-display">0:00</div>
+    </div>
+    <div id="score-row">
+      <div id="red-panel" class="alliance-panel red-panel">
+        <div class="alliance-label">Red</div>
+        <div id="red-teams" class="team-numbers"></div>
+        <div id="red-score" class="score-value">0</div>
+        <div id="red-rp" class="rp-row"></div>
+      </div>
+      <div id="blue-panel" class="alliance-panel blue-panel">
+        <div class="alliance-label">Blue</div>
+        <div id="blue-teams" class="team-numbers"></div>
+        <div id="blue-score" class="score-value">0</div>
+        <div id="blue-rp" class="rp-row"></div>
+      </div>
+    </div>
+    <div id="overlay-complete" class="overlay hidden">
+      <div class="overlay-box overlay-complete">Match Complete</div>
+    </div>
+    <div id="overlay-waiting" class="overlay hidden">
+      <div class="overlay-box overlay-waiting">Waiting for Match</div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/common.js"></script>
+  <script>
+    (function () {
+      var timerEl   = document.getElementById('timer-display');
+      var periodEl  = document.getElementById('period-label');
+      var redScore  = document.getElementById('red-score');
+      var blueScore = document.getElementById('blue-score');
+      var redTeams  = document.getElementById('red-teams');
+      var blueTeams = document.getElementById('blue-teams');
+      var redRp     = document.getElementById('red-rp');
+      var blueRp    = document.getElementById('blue-rp');
+      var overlayComplete = document.getElementById('overlay-complete');
+      var overlayWaiting  = document.getElementById('overlay-waiting');
+
+      var matchActive = false;
+
+      // ── Helpers ─────────────────────────────────────────────────────────────
+
+      function showOverlay(which) {
+        overlayComplete.classList.add('hidden');
+        overlayWaiting.classList.add('hidden');
+        if (which === 'complete') overlayComplete.classList.remove('hidden');
+        if (which === 'waiting')  overlayWaiting.classList.remove('hidden');
+      }
+
+      function hideOverlays() {
+        overlayComplete.classList.add('hidden');
+        overlayWaiting.classList.add('hidden');
+      }
+
+      function setTeams(container, teams, color) {
+        while (container.firstChild) container.removeChild(container.firstChild);
+        (teams || []).forEach(function (t) {
+          var chip = document.createElement('div');
+          chip.className = 'team-chip';
+          chip.textContent = t;
+          container.appendChild(chip);
+        });
+      }
+
+      var RP_KEYS = ['PARK_RP', 'PATTERN_RP', 'BALL_RP'];
+      var RP_LABELS = { PARK_RP: 'Park RP', PATTERN_RP: 'Pattern RP', BALL_RP: 'Ball RP' };
+
+      function renderRp(container, rpObj) {
+        while (container.firstChild) container.removeChild(container.firstChild);
+        RP_KEYS.forEach(function (key) {
+          var badge = document.createElement('div');
+          badge.className = 'rp-badge' + (rpObj && rpObj[key] ? ' earned' : '');
+          badge.textContent = RP_LABELS[key];
+          container.appendChild(badge);
+        });
+      }
+
+      function applyScoreUpdate(data) {
+        if (!data) return;
+        redScore.textContent  = data.red  && typeof data.red.score  === 'number' ? data.red.score  : '0';
+        blueScore.textContent = data.blue && typeof data.blue.score === 'number' ? data.blue.score : '0';
+        renderRp(redRp,  data.red  && data.red.rp);
+        renderRp(blueRp, data.blue && data.blue.rp);
+      }
+
+      function resetDisplay() {
+        matchActive = false;
+        redScore.textContent  = '0';
+        blueScore.textContent = '0';
+        timerEl.textContent = '0:00';
+        timerEl.className = 'timer-display';
+        periodEl.textContent = 'Waiting';
+        periodEl.className = 'period-label';
+        setTeams(redTeams,  [], 'red');
+        setTeams(blueTeams, [], 'blue');
+        renderRp(redRp,  null);
+        renderRp(blueRp, null);
+        showOverlay('waiting');
+      }
+
+      // ── Fetch initial queue info ─────────────────────────────────────────────
+      function fetchQueueInfo() {
+        fetch('/api/queue').then(function (r) {
+          if (!r.ok) return;
+          return r.json();
+        }).then(function (data) {
+          if (!data) return;
+          var onField = data.onField;
+          if (onField) {
+            setTeams(redTeams,  onField.red,  'red');
+            setTeams(blueTeams, onField.blue, 'blue');
+          }
+        }).catch(function () {});
+      }
+
+      // ── Socket ───────────────────────────────────────────────────────────────
+      var socket = SK.connectSocket();
+      if (socket) {
+        socket.on('timer_tick', function (state) {
+          if (!matchActive) return;
+          SK.applyTimerState(state, timerEl, null);
+        });
+
+        socket.on('period_change', function (state) {
+          SK.applyTimerState(state, timerEl, periodEl);
+          SK.playBuzzer();
+        });
+
+        socket.on('match_start', function (state) {
+          matchActive = true;
+          hideOverlays();
+          if (state) SK.applyTimerState(state, timerEl, periodEl);
+        });
+
+        socket.on('match_end', function () {
+          matchActive = false;
+          showOverlay('complete');
+        });
+
+        socket.on('score_update', function (data) {
+          applyScoreUpdate(data);
+        });
+
+        socket.on('match_loaded', function (data) {
+          if (!data) return;
+          setTeams(redTeams,  data.red,  'red');
+          setTeams(blueTeams, data.blue, 'blue');
+          hideOverlays();
+        });
+
+        socket.on('match_abort', function () {
+          resetDisplay();
+        });
+      }
+
+      // ── Init ─────────────────────────────────────────────────────────────────
+      resetDisplay();
+      fetchQueueInfo();
+    })();
+  </script>
+</body>
+</html>

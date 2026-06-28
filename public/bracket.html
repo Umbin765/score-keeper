@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Playoff Bracket — Score Keeper</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .page-header {
+      padding: 1.25rem 0 1rem;
+    }
+    .page-header h1 {
+      font-size: 1.6rem;
+      font-weight: 900;
+    }
+    .page-header p {
+      color: var(--text2);
+      font-size: 0.85rem;
+      margin-top: 0.25rem;
+    }
+
+    /* Bracket layout */
+    .bracket-container {
+      display: flex;
+      gap: 1.5rem;
+      overflow-x: auto;
+      padding: 0.5rem 0 1.5rem;
+      min-height: 300px;
+    }
+
+    .bracket-round {
+      min-width: 200px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .bracket-round h3 {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text2);
+      margin-bottom: 0.75rem;
+      padding-bottom: 0.4rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .bracket-match {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.75rem;
+      margin-bottom: 0.75rem;
+      transition: border-color 0.15s;
+    }
+    .bracket-match:hover { border-color: var(--blue-border); }
+
+    .bm-match-num {
+      font-size: 0.7rem;
+      color: var(--text2);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 0.4rem;
+    }
+
+    .bm-alliance {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.3rem 0.4rem;
+      border-radius: 4px;
+      margin-bottom: 0.25rem;
+    }
+    .bm-alliance:last-of-type { margin-bottom: 0; }
+
+    .bm-alliance.bm-red  { background: var(--red-bg);  border: 1px solid var(--red-border); }
+    .bm-alliance.bm-blue { background: var(--blue-bg); border: 1px solid var(--blue-border); }
+
+    .bm-alliance-num {
+      font-size: 0.9rem;
+      font-weight: 700;
+    }
+    .bm-alliance.bm-red  .bm-alliance-num { color: var(--red-light); }
+    .bm-alliance.bm-blue .bm-alliance-num { color: var(--blue-light); }
+
+    .bm-alliance-score {
+      font-size: 0.85rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: var(--text2);
+    }
+
+    .bm-winner-badge {
+      display: inline-block;
+      margin-top: 0.4rem;
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      background: #002a00;
+      color: var(--green);
+      border: 1px solid var(--green);
+    }
+
+    .bracket-match.winner-red  { border-left: 3px solid var(--red); }
+    .bracket-match.winner-blue { border-left: 3px solid var(--blue-light); }
+
+    /* No data */
+    .no-data {
+      text-align: center;
+      color: var(--text2);
+      padding: 3rem 0;
+      font-size: 1rem;
+    }
+    .no-data small {
+      display: block;
+      margin-top: 0.35rem;
+      font-size: 0.8rem;
+      color: var(--text2);
+    }
+
+    /* Last updated */
+    .last-updated {
+      font-size: 0.75rem;
+      color: var(--text2);
+      text-align: right;
+      margin-top: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="page-header">
+      <h1>Playoff Bracket</h1>
+      <p>Live updates — refreshes automatically</p>
+    </div>
+
+    <div id="bracket-wrap">
+      <div id="no-bracket" class="no-data">
+        Playoffs have not started yet.
+        <small>This page will update automatically when the bracket is available.</small>
+      </div>
+      <div id="bracket-container" class="bracket-container hidden"></div>
+    </div>
+
+    <div id="last-updated" class="last-updated"></div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/common.js"></script>
+  <script>
+    (function () {
+      var noBracket       = document.getElementById('no-bracket');
+      var bracketContainer= document.getElementById('bracket-container');
+      var lastUpdated     = document.getElementById('last-updated');
+
+      // ── Helpers ──────────────────────────────────────────────────────────────
+
+      function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); }
+
+      function normaliseRound(raw) {
+        // Accept bracketRound or bracket_round
+        return raw.bracketRound || raw.bracket_round || 'Round 1';
+      }
+
+      function allianceName(match, color) {
+        if (color === 'red') return match.redAlliance || match.redAllianceNum || match.red || '?';
+        return match.blueAlliance || match.blueAllianceNum || match.blue || '?';
+      }
+
+      function allianceScore(match, color) {
+        if (color === 'red') return match.redScore != null ? match.redScore : null;
+        return match.blueScore != null ? match.blueScore : null;
+      }
+
+      // ── Render ────────────────────────────────────────────────────────────────
+
+      function buildMatchCard(match) {
+        var card = document.createElement('div');
+        card.className = 'bracket-match';
+        if (match.winner === 'red')  card.classList.add('winner-red');
+        if (match.winner === 'blue') card.classList.add('winner-blue');
+
+        // Match number label
+        var numEl = document.createElement('div');
+        numEl.className = 'bm-match-num';
+        numEl.textContent = 'Match ' + (match.matchNumber || match.id || '?');
+        card.appendChild(numEl);
+
+        // Red alliance row
+        var redRow = document.createElement('div');
+        redRow.className = 'bm-alliance bm-red';
+
+        var redNum = document.createElement('div');
+        redNum.className = 'bm-alliance-num';
+        redNum.textContent = 'Red ' + allianceName(match, 'red');
+
+        var redScore = document.createElement('div');
+        redScore.className = 'bm-alliance-score';
+        var rs = allianceScore(match, 'red');
+        redScore.textContent = rs != null ? rs : '';
+
+        redRow.appendChild(redNum);
+        redRow.appendChild(redScore);
+        card.appendChild(redRow);
+
+        // Blue alliance row
+        var blueRow = document.createElement('div');
+        blueRow.className = 'bm-alliance bm-blue';
+
+        var blueNum = document.createElement('div');
+        blueNum.className = 'bm-alliance-num';
+        blueNum.textContent = 'Blue ' + allianceName(match, 'blue');
+
+        var blueScore = document.createElement('div');
+        blueScore.className = 'bm-alliance-score';
+        var bs = allianceScore(match, 'blue');
+        blueScore.textContent = bs != null ? bs : '';
+
+        blueRow.appendChild(blueNum);
+        blueRow.appendChild(blueScore);
+        card.appendChild(blueRow);
+
+        // Winner badge
+        if (match.winner) {
+          var badge = document.createElement('div');
+          badge.className = 'bm-winner-badge';
+          badge.textContent = match.winner.toUpperCase() + ' WINS';
+          card.appendChild(badge);
+        }
+
+        return card;
+      }
+
+      function renderBracket(data) {
+        clear(bracketContainer);
+
+        var matches = (data && (data.matches || data)) || [];
+        if (!Array.isArray(matches)) matches = [];
+
+        if (matches.length === 0) {
+          noBracket.classList.remove('hidden');
+          bracketContainer.classList.add('hidden');
+          return;
+        }
+
+        noBracket.classList.add('hidden');
+        bracketContainer.classList.remove('hidden');
+
+        // Group by round, preserving insertion order
+        var roundOrder = [];
+        var byRound = {};
+        matches.forEach(function (m) {
+          var r = normaliseRound(m);
+          if (!byRound[r]) {
+            byRound[r] = [];
+            roundOrder.push(r);
+          }
+          byRound[r].push(m);
+        });
+
+        // Sort rounds if they follow "Round N" pattern
+        roundOrder.sort(function (a, b) {
+          var numA = parseInt(a.replace(/\D/g, ''), 10) || 0;
+          var numB = parseInt(b.replace(/\D/g, ''), 10) || 0;
+          if (numA !== numB) return numA - numB;
+          return a.localeCompare(b);
+        });
+
+        roundOrder.forEach(function (roundName) {
+          var col = document.createElement('div');
+          col.className = 'bracket-round';
+
+          var h3 = document.createElement('h3');
+          h3.textContent = roundName;
+          col.appendChild(h3);
+
+          byRound[roundName].forEach(function (match) {
+            col.appendChild(buildMatchCard(match));
+          });
+
+          bracketContainer.appendChild(col);
+        });
+
+        var now = new Date();
+        lastUpdated.textContent = 'Last updated: ' + now.toLocaleTimeString();
+      }
+
+      // ── Fetch ─────────────────────────────────────────────────────────────────
+      function fetchBracket() {
+        fetch('/api/bracket').then(function (r) {
+          if (r.status === 404) return null;
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        }).then(function (data) {
+          renderBracket(data);
+        }).catch(function (e) {
+          console.error('Bracket fetch error:', e);
+        });
+      }
+
+      // ── Socket ────────────────────────────────────────────────────────────────
+      var socket = SK.connectSocket();
+      if (socket) {
+        socket.on('bracket_update', function (data) {
+          renderBracket(data);
+        });
+      }
+
+      // ── Init ──────────────────────────────────────────────────────────────────
+      fetchBracket();
+    })();
+  </script>
+</body>
+</html>
