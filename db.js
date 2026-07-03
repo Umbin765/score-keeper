@@ -172,6 +172,7 @@ const DEFAULT_SETTINGS = {
   pin_control: '3002',
   pin_queue: '2002',
   admin_password: 'ftcadmin',
+  event_name: 'Score Keeper Event',
 };
 
 const DEFAULT_PERIODS = [
@@ -288,8 +289,18 @@ function getFullScore(db, matchId, alliance) {
   }
   total += penaltyPts;
 
+  const autoTotal   = scores.auto_classified * pv.auto_classified
+                    + scores.auto_overflow   * pv.auto_overflow
+                    + scores.auto_leave      * pv.auto_leave
+                    + scores.auto_pattern    * pv.auto_pattern;
+  const teleopTotal = scores.teleop_classified * pv.teleop_classified
+                    + scores.teleop_overflow   * pv.teleop_overflow
+                    + scores.teleop_balls      * pv.teleop_balls;
+
   return {
     total,
+    autoTotal,
+    teleopTotal,
     breakdown: {
       auto_classified: scores.auto_classified,
       auto_overflow: scores.auto_overflow,
