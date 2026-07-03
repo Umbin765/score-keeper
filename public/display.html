@@ -3,182 +3,319 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Display — Score Keeper</title>
+  <title>Display Overlay — Score Keeper</title>
   <link rel="stylesheet" href="/css/style.css">
   <style>
+    /* ── Transparent base for OBS browser-source overlay ── */
     html, body {
-      height: 100%;
+      margin: 0; padding: 0;
+      width: 100vw; height: 100vh;
+      background: transparent !important;
       overflow: hidden;
     }
 
-    /* ── Root layout ── */
     #display-root {
-      display: flex;
-      flex-direction: column;
-      height: 100vh;
       width: 100vw;
-      background: var(--bg);
+      height: 100vh;
       position: relative;
     }
 
-    /* ── Top bar: period + timer ── */
-    #top-bar {
+    /* ══════════════════════════════════════════════════════
+       SCOREBOARD BAR  — fixed to bottom, always present
+    ══════════════════════════════════════════════════════ */
+    #score-bar {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      height: 13.5vh;
+      min-height: 90px;
+      display: flex;
+      align-items: stretch;
+      background: rgba(10, 10, 10, 0.94);
+      border-top: 2px solid rgba(255,255,255,0.08);
+      font-family: var(--font-main);
+      transition: opacity 0.4s;
+    }
+
+    /* ── Alliance sides ── */
+    .alliance-side {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      padding: 0 1.8vw;
+      gap: 1.1vw;
+      transition: background 0.5s;
+      min-width: 0;
+    }
+    .alliance-side.blue-side {
+      background: linear-gradient(to right, rgba(0,44,160,0.45) 0%, rgba(0,44,160,0.10) 100%);
+      flex-direction: row;
+    }
+    .alliance-side.red-side {
+      background: linear-gradient(to left, rgba(160,0,0,0.45) 0%, rgba(160,0,0,0.10) 100%);
+      flex-direction: row-reverse;
+    }
+
+    /* Winner highlight (added on match_end) */
+    .alliance-side.blue-side.winner {
+      background: linear-gradient(to right, rgba(0,60,210,0.70) 0%, rgba(0,60,210,0.20) 100%);
+    }
+    .alliance-side.red-side.winner {
+      background: linear-gradient(to left, rgba(200,0,0,0.70) 0%, rgba(200,0,0,0.20) 100%);
+    }
+
+    /* ── RP column ── */
+    .rp-column {
+      display: flex;
+      flex-direction: column;
+      gap: 0.6vh;
+      flex-shrink: 0;
+    }
+    .rp-item {
+      display: flex;
+      align-items: center;
+      gap: 0.4vw;
+    }
+    .rp-dot {
+      width: clamp(9px, 1.1vw, 16px);
+      height: clamp(9px, 1.1vw, 16px);
+      border-radius: 50%;
+      background: rgba(255,255,255,0.10);
+      border: 1.5px solid rgba(255,255,255,0.18);
+      flex-shrink: 0;
+      transition: background 0.3s, border-color 0.3s;
+    }
+    .rp-dot.earned {
+      background: var(--green);
+      border-color: var(--green);
+      box-shadow: 0 0 6px var(--green);
+    }
+    .rp-dot-label {
+      font-size: clamp(6px, 0.65vw, 10px);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: rgba(255,255,255,0.35);
+      white-space: nowrap;
+    }
+
+    /* ── Team pills ── */
+    .teams-column {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5vh;
+      flex-shrink: 0;
+    }
+    .team-pill {
+      font-size: clamp(0.9rem, 1.65vw, 1.55rem);
+      font-weight: 800;
+      font-family: var(--font-mono);
+      padding: 0.05em 0.45em;
+      border-radius: 4px;
+      line-height: 1.25;
+      letter-spacing: 0.02em;
+    }
+    .blue-side .team-pill {
+      background: rgba(40,100,255,0.22);
+      color: #7ab8ff;
+    }
+    .red-side .team-pill {
+      background: rgba(220,40,40,0.22);
+      color: #ff7878;
+    }
+
+    /* ── Score ── */
+    .score-display {
+      font-size: clamp(2.8rem, 6.5vw, 5.5rem);
+      font-weight: 900;
+      font-variant-numeric: tabular-nums;
+      font-family: var(--font-mono);
+      line-height: 1;
+      transition: color 0.3s;
+    }
+    .blue-side .score-display { color: #4da6ff; }
+    .red-side  .score-display { color: #ff5050; }
+    .blue-side.winner .score-display { color: #7ad4ff; text-shadow: 0 0 20px rgba(77,166,255,0.6); }
+    .red-side.winner  .score-display { color: #ff8080; text-shadow: 0 0 20px rgba(255,80,80,0.6); }
+
+    /* ── CENTER PANEL ── */
+    #center-panel {
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      padding: 1.5vh 2vw 1vh;
-      gap: 0.3rem;
+      padding: 0 1.5vw;
+      min-width: 13vw;
+      flex-shrink: 0;
+      gap: 0.15vh;
     }
 
-    .period-label {
-      font-size: clamp(1rem, 3vw, 2rem);
+    #period-label {
+      font-size: clamp(0.55rem, 1.1vw, 0.95rem);
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.12em;
-      color: var(--text2);
-    }
-    .period-label.auto      { color: var(--text2); }
-    .period-label.teleop    { color: var(--blue-light); }
-    .period-label.endgame   { color: var(--yellow); }
-    .period-label.transition{ color: var(--text2); }
-    .period-label.buzzer    { color: var(--green); }
-
-    .timer-display {
-      font-size: clamp(4rem, 14vw, 12rem);
-      font-weight: 900;
-      font-variant-numeric: tabular-nums;
-      font-family: var(--font-mono);
-      color: var(--timer-normal);
+      letter-spacing: 0.14em;
+      color: rgba(255,255,255,0.45);
       line-height: 1;
+    }
+    #period-label.auto       { color: rgba(255,255,255,0.65); }
+    #period-label.teleop     { color: #5aadff; }
+    #period-label.endgame    { color: #ffd93d; }
+    #period-label.transition { color: rgba(255,255,255,0.4); }
+    #period-label.buzzer     { color: var(--green); }
+
+    #timer-display {
+      font-size: clamp(2.2rem, 5.5vw, 4.8rem);
+      font-weight: 900;
+      font-family: var(--font-mono);
+      color: #ffffff;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
       letter-spacing: -0.02em;
     }
-    .timer-display.endgame { color: var(--timer-endgame); }
-    .timer-display.final   { color: var(--timer-final); }
+    #timer-display.endgame { color: #ffd93d; }
+    #timer-display.final   { color: #ff4444; }
 
-    /* ── Score row ── */
-    #score-row {
-      display: flex;
-      flex: 1;
-      min-height: 0;
-      gap: 1vw;
-      padding: 0.5vh 2vw 1vh;
+    #center-sublabel {
+      font-size: clamp(0.55rem, 1vw, 0.9rem);
+      font-weight: 600;
+      color: rgba(255,255,255,0.3);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
     }
 
-    .alliance-panel {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      border-radius: 12px;
-      gap: 1vh;
-      padding: 1vh 1vw;
+    /* ══════════════════════════════════════════════════════
+       PRE-MATCH CARD  — floats above bar, shown when waiting
+    ══════════════════════════════════════════════════════ */
+    #pre-match-card {
+      position: fixed;
+      bottom: 13.5vh;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(10,10,10,0.90);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-bottom: none;
+      border-radius: 10px 10px 0 0;
+      padding: 0.75rem 2.5rem 1rem;
+      text-align: center;
+      min-width: 18vw;
+      display: none;
     }
-    .alliance-panel.red-panel  { background: var(--red-bg);  border: 2px solid var(--red-border); }
-    .alliance-panel.blue-panel { background: var(--blue-bg); border: 2px solid var(--blue-border); }
+    #pre-match-card.visible { display: block; }
 
-    .alliance-label {
-      font-size: clamp(1.2rem, 3vw, 2.2rem);
-      font-weight: 900;
+    .pre-label {
+      font-size: clamp(0.6rem, 1.1vw, 0.9rem);
+      font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.15em;
+      color: rgba(255,255,255,0.4);
+      margin-bottom: 0.4rem;
     }
-    .alliance-panel.red-panel  .alliance-label { color: var(--red-light); }
-    .alliance-panel.blue-panel .alliance-label { color: var(--blue-light); }
-
-    .team-numbers {
-      display: flex;
-      gap: 1vw;
-      flex-wrap: wrap;
-      justify-content: center;
+    .pre-match-num {
+      font-size: clamp(0.85rem, 1.6vw, 1.35rem);
+      font-weight: 800;
+      color: rgba(255,255,255,0.75);
+      letter-spacing: 0.05em;
     }
-    .team-chip {
-      font-size: clamp(1rem, 2.5vw, 2rem);
-      font-weight: 700;
-      padding: 0.3rem 0.8rem;
-      border-radius: 6px;
-      font-family: var(--font-mono);
-    }
-    .red-panel .team-chip  { background: rgba(204,0,0,0.25); color: var(--red-light); }
-    .blue-panel .team-chip { background: rgba(0,68,204,0.25); color: var(--blue-light); }
-
-    .score-value {
-      font-size: clamp(4rem, 13vw, 11rem);
-      font-weight: 900;
-      font-variant-numeric: tabular-nums;
-      line-height: 1;
-    }
-    .red-panel  .score-value { color: var(--red-light); }
-    .blue-panel .score-value { color: var(--blue-light); }
-
-    .rp-row {
-      display: flex;
-      gap: 0.5vw;
-      flex-wrap: wrap;
-      justify-content: center;
-    }
-    .rp-badge {
-      font-size: clamp(0.7rem, 1.5vw, 1rem);
-      padding: 0.25rem 0.75rem;
-    }
-
-    /* ── Overlays ── */
-    .overlay {
-      position: absolute;
-      inset: 0;
+    .pre-teams-row {
       display: flex;
       align-items: center;
       justify-content: center;
-      z-index: 100;
-      backdrop-filter: blur(4px);
+      gap: 0.5rem;
+      margin-top: 0.35rem;
+      flex-wrap: wrap;
     }
-    .overlay-box {
-      font-size: clamp(2rem, 6vw, 5rem);
+    .pre-team {
+      font-size: clamp(0.8rem, 1.4vw, 1.2rem);
+      font-weight: 800;
+      font-family: var(--font-mono);
+      padding: 0.1em 0.45em;
+      border-radius: 4px;
+    }
+    .pre-team.red  { background: rgba(180,0,0,0.3);   color: #ff7878; }
+    .pre-team.blue { background: rgba(0,60,200,0.3);   color: #7ab8ff; }
+    .pre-vs {
+      font-size: 0.75rem;
+      color: rgba(255,255,255,0.25);
+      font-weight: 300;
+    }
+
+    /* ══════════════════════════════════════════════════════
+       POST-MATCH BANNER  — centered, shown on match_end
+    ══════════════════════════════════════════════════════ */
+    #post-match-banner {
+      position: fixed;
+      bottom: 13.5vh;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,20,0,0.93);
+      border: 2px solid var(--green);
+      border-bottom: none;
+      border-radius: 12px 12px 0 0;
+      padding: 1rem 4rem 1.2rem;
+      text-align: center;
+      display: none;
+      min-width: 22vw;
+    }
+    #post-match-banner.visible { display: block; }
+
+    .post-title {
+      font-size: clamp(1.2rem, 3.5vw, 3rem);
       font-weight: 900;
       text-transform: uppercase;
-      letter-spacing: 0.1em;
-      text-align: center;
-      padding: 2rem 4rem;
-      border-radius: 16px;
-    }
-    .overlay-complete {
-      background: rgba(0,40,0,0.9);
+      letter-spacing: 0.12em;
       color: var(--green);
-      border: 3px solid var(--green);
+      line-height: 1;
     }
-    .overlay-waiting {
-      background: rgba(13,13,13,0.9);
-      color: var(--text2);
-      border: 3px solid var(--border);
+    .post-subtitle {
+      font-size: clamp(0.65rem, 1.3vw, 1.1rem);
+      font-weight: 600;
+      color: rgba(255,255,255,0.55);
+      margin-top: 0.3rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
     }
   </style>
 </head>
 <body>
   <div id="display-root">
-    <div id="top-bar">
-      <div id="period-label" class="period-label">Waiting</div>
-      <div id="timer-display" class="timer-display">0:00</div>
+
+    <!-- Pre-match floating card -->
+    <div id="pre-match-card">
+      <div class="pre-label">Upcoming Match</div>
+      <div id="pre-match-num" class="pre-match-num">—</div>
+      <div id="pre-teams-row" class="pre-teams-row"></div>
     </div>
-    <div id="score-row">
-      <div id="red-panel" class="alliance-panel red-panel">
-        <div class="alliance-label">Red</div>
-        <div id="red-teams" class="team-numbers"></div>
-        <div id="red-score" class="score-value">0</div>
-        <div id="red-rp" class="rp-row"></div>
+
+    <!-- Post-match banner -->
+    <div id="post-match-banner">
+      <div class="post-title">Match Complete</div>
+      <div id="post-subtitle" class="post-subtitle">Final Score</div>
+    </div>
+
+    <!-- Main scoreboard bar -->
+    <div id="score-bar">
+
+      <!-- Blue alliance (left) -->
+      <div id="blue-panel" class="alliance-side blue-side">
+        <div id="blue-rp" class="rp-column"></div>
+        <div id="blue-teams" class="teams-column"></div>
+        <div id="blue-score" class="score-display">0</div>
       </div>
-      <div id="blue-panel" class="alliance-panel blue-panel">
-        <div class="alliance-label">Blue</div>
-        <div id="blue-teams" class="team-numbers"></div>
-        <div id="blue-score" class="score-value">0</div>
-        <div id="blue-rp" class="rp-row"></div>
+
+      <!-- Center: period + timer -->
+      <div id="center-panel">
+        <div id="period-label">—</div>
+        <div id="timer-display">0:00</div>
+        <div id="center-sublabel"></div>
       </div>
-    </div>
-    <div id="overlay-complete" class="overlay hidden">
-      <div class="overlay-box overlay-complete">Match Complete</div>
-    </div>
-    <div id="overlay-waiting" class="overlay hidden">
-      <div class="overlay-box overlay-waiting">Waiting for Match</div>
+
+      <!-- Red alliance (right) -->
+      <div id="red-panel" class="alliance-side red-side">
+        <div id="red-rp" class="rp-column"></div>
+        <div id="red-teams" class="teams-column"></div>
+        <div id="red-score" class="score-display">0</div>
+      </div>
+
     </div>
   </div>
 
@@ -186,85 +323,179 @@
   <script src="/js/common.js"></script>
   <script>
     (function () {
-      var timerEl   = document.getElementById('timer-display');
-      var periodEl  = document.getElementById('period-label');
-      var redScore  = document.getElementById('red-score');
-      var blueScore = document.getElementById('blue-score');
-      var redTeams  = document.getElementById('red-teams');
-      var blueTeams = document.getElementById('blue-teams');
-      var redRp     = document.getElementById('red-rp');
-      var blueRp    = document.getElementById('blue-rp');
-      var overlayComplete = document.getElementById('overlay-complete');
-      var overlayWaiting  = document.getElementById('overlay-waiting');
+      var timerEl      = document.getElementById('timer-display');
+      var periodEl     = document.getElementById('period-label');
+      var centerSub    = document.getElementById('center-sublabel');
+      var redScore     = document.getElementById('red-score');
+      var blueScore    = document.getElementById('blue-score');
+      var redTeams     = document.getElementById('red-teams');
+      var blueTeams    = document.getElementById('blue-teams');
+      var redRp        = document.getElementById('red-rp');
+      var blueRp       = document.getElementById('blue-rp');
+      var redPanel     = document.getElementById('red-panel');
+      var bluePanel    = document.getElementById('blue-panel');
+      var preCard      = document.getElementById('pre-match-card');
+      var preMatchNum  = document.getElementById('pre-match-num');
+      var preTeamsRow  = document.getElementById('pre-teams-row');
+      var postBanner   = document.getElementById('post-match-banner');
+      var postSubtitle = document.getElementById('post-subtitle');
 
       var matchActive = false;
 
-      // ── Helpers ─────────────────────────────────────────────────────────────
+      // ── DOM helpers ──────────────────────────────────────────────────────────
 
-      function showOverlay(which) {
-        overlayComplete.classList.add('hidden');
-        overlayWaiting.classList.add('hidden');
-        if (which === 'complete') overlayComplete.classList.remove('hidden');
-        if (which === 'waiting')  overlayWaiting.classList.remove('hidden');
-      }
-
-      function hideOverlays() {
-        overlayComplete.classList.add('hidden');
-        overlayWaiting.classList.add('hidden');
+      function clear(el) {
+        while (el.firstChild) el.removeChild(el.firstChild);
       }
 
       function setTeams(container, teams, color) {
-        while (container.firstChild) container.removeChild(container.firstChild);
+        clear(container);
         (teams || []).forEach(function (t) {
-          var chip = document.createElement('div');
-          chip.className = 'team-chip';
-          chip.textContent = t;
-          container.appendChild(chip);
+          var pill = document.createElement('div');
+          pill.className = 'team-pill';
+          pill.textContent = t;
+          container.appendChild(pill);
         });
       }
 
-      // rpObj shape from server: { parkRp, patternRp, ballRp, winLossRp, total }
+      // ── RP rendering ─────────────────────────────────────────────────────────
+
       var RP_DEFS = [
-        { key: 'parkRp',    label: 'Park RP'    },
-        { key: 'patternRp', label: 'Pattern RP' },
-        { key: 'ballRp',    label: 'Ball RP'    },
+        { key: 'parkRp',    label: 'Park'    },
+        { key: 'patternRp', label: 'Pat.'    },
+        { key: 'ballRp',    label: 'Ball'    },
       ];
 
       function renderRp(container, rpObj) {
-        while (container.firstChild) container.removeChild(container.firstChild);
+        clear(container);
         RP_DEFS.forEach(function (def) {
-          var badge = document.createElement('div');
-          badge.className = 'rp-badge' + (rpObj && rpObj[def.key] ? ' earned' : '');
-          badge.textContent = def.label + (rpObj && rpObj[def.key] ? ' ×' + rpObj[def.key] : '');
-          container.appendChild(badge);
+          var earned = rpObj && rpObj[def.key];
+
+          var item = document.createElement('div');
+          item.className = 'rp-item';
+
+          var dot = document.createElement('div');
+          dot.className = 'rp-dot' + (earned ? ' earned' : '');
+
+          var lbl = document.createElement('div');
+          lbl.className = 'rp-dot-label';
+          lbl.textContent = def.label;
+
+          item.appendChild(dot);
+          item.appendChild(lbl);
+          container.appendChild(item);
         });
       }
 
+      // ── Score update ─────────────────────────────────────────────────────────
+
       function applyScoreUpdate(data) {
         if (!data) return;
-        // server sends { red: { total, ... }, blue: { total, ... }, redRP: { parkRp, patternRp, ballRp }, blueRP }
         redScore.textContent  = data.red  && data.red.total  != null ? data.red.total  : '0';
         blueScore.textContent = data.blue && data.blue.total != null ? data.blue.total : '0';
         renderRp(redRp,  data.redRP);
         renderRp(blueRp, data.blueRP);
       }
 
-      function resetDisplay() {
-        matchActive = false;
-        redScore.textContent  = '0';
-        blueScore.textContent = '0';
-        timerEl.textContent = '0:00';
-        timerEl.className = 'timer-display';
-        periodEl.textContent = 'Waiting';
-        periodEl.className = 'period-label';
-        setTeams(redTeams,  [], 'red');
-        setTeams(blueTeams, [], 'blue');
-        renderRp(redRp,  null);
-        renderRp(blueRp, null);
-        showOverlay('waiting');
+      // Determine winner for post-match highlight
+      function applyWinner() {
+        var r = parseInt(redScore.textContent,  10) || 0;
+        var b = parseInt(blueScore.textContent, 10) || 0;
+        redPanel.classList.remove('winner');
+        bluePanel.classList.remove('winner');
+        if (r > b) {
+          redPanel.classList.add('winner');
+          postSubtitle.textContent = 'Red Wins';
+        } else if (b > r) {
+          bluePanel.classList.add('winner');
+          postSubtitle.textContent = 'Blue Wins';
+        } else {
+          postSubtitle.textContent = 'Tie Game';
+        }
       }
 
-      // ── Fetch initial queue info ─────────────────────────────────────────────
+      // ── State transitions ─────────────────────────────────────────────────────
+
+      function showPreMatch(matchNum, redArr, blueArr) {
+        preCard.classList.add('visible');
+        postBanner.classList.remove('visible');
+
+        if (matchNum) {
+          preMatchNum.textContent = 'Match ' + matchNum;
+        } else {
+          preMatchNum.textContent = 'Waiting for Match';
+        }
+
+        clear(preTeamsRow);
+        (redArr || []).forEach(function (t, i) {
+          if (i === 0 && (blueArr || []).length) {
+            // leading red chips — add vs in middle after reds
+          }
+          var chip = document.createElement('div');
+          chip.className = 'pre-team red';
+          chip.textContent = t;
+          preTeamsRow.appendChild(chip);
+        });
+        if ((redArr || []).length && (blueArr || []).length) {
+          var vs = document.createElement('div');
+          vs.className = 'pre-vs';
+          vs.textContent = 'vs';
+          preTeamsRow.appendChild(vs);
+        }
+        (blueArr || []).forEach(function (t) {
+          var chip = document.createElement('div');
+          chip.className = 'pre-team blue';
+          chip.textContent = t;
+          preTeamsRow.appendChild(chip);
+        });
+
+        // Center panel: waiting state
+        periodEl.textContent = 'Waiting';
+        periodEl.className = 'period-label';
+        timerEl.textContent = '—';
+        timerEl.className = 'timer-display';
+        centerSub.textContent = '';
+
+        redScore.textContent  = '0';
+        blueScore.textContent = '0';
+        setTeams(redTeams,  redArr  || [], 'red');
+        setTeams(blueTeams, blueArr || [], 'blue');
+        renderRp(redRp,  null);
+        renderRp(blueRp, null);
+        redPanel.classList.remove('winner');
+        bluePanel.classList.remove('winner');
+      }
+
+      function showActive(state) {
+        preCard.classList.remove('visible');
+        postBanner.classList.remove('visible');
+        redPanel.classList.remove('winner');
+        bluePanel.classList.remove('winner');
+        centerSub.textContent = '';
+        if (state) SK.applyTimerState(state, timerEl, periodEl);
+      }
+
+      function showComplete() {
+        matchActive = false;
+        postBanner.classList.add('visible');
+        preCard.classList.remove('visible');
+        applyWinner();
+        periodEl.textContent = 'Final';
+        periodEl.className = 'period-label';
+        timerEl.textContent = '—';
+        timerEl.className = 'timer-display';
+        centerSub.textContent = 'Match Complete';
+      }
+
+      function resetToWaiting() {
+        matchActive = false;
+        redPanel.classList.remove('winner');
+        bluePanel.classList.remove('winner');
+        showPreMatch(null, [], []);
+      }
+
+      // ── Fetch queue info for pre-match display ────────────────────────────────
+
       function fetchQueueInfo() {
         fetch('/api/queue').then(function (r) {
           if (!r.ok) return;
@@ -273,19 +504,22 @@
           if (!data) return;
           var onField = data.onField;
           if (onField) {
-            setTeams(redTeams, [
-              onField.red1_team  && onField.red1_team.number,
-              onField.red2_team  && onField.red2_team.number,
-            ].filter(Boolean), 'red');
-            setTeams(blueTeams, [
-              onField.blue1_team && onField.blue1_team.number,
-              onField.blue2_team && onField.blue2_team.number,
-            ].filter(Boolean), 'blue');
+            var red  = [onField.red1_team  && onField.red1_team.number,
+                        onField.red2_team  && onField.red2_team.number].filter(Boolean);
+            var blue = [onField.blue1_team && onField.blue1_team.number,
+                        onField.blue2_team && onField.blue2_team.number].filter(Boolean);
+            if (!matchActive) {
+              showPreMatch(onField.match_number, red, blue);
+            } else {
+              setTeams(redTeams,  red,  'red');
+              setTeams(blueTeams, blue, 'blue');
+            }
           }
         }).catch(function () {});
       }
 
       // ── Socket ───────────────────────────────────────────────────────────────
+
       var socket = SK.connectSocket();
       if (socket) {
         socket.on('timer_tick', function (state) {
@@ -300,31 +534,29 @@
 
         socket.on('match_start', function (state) {
           matchActive = true;
-          hideOverlays();
-          if (state) SK.applyTimerState(state, timerEl, periodEl);
+          showActive(state);
         });
 
         socket.on('match_end', function () {
-          matchActive = false;
-          showOverlay('complete');
+          showComplete();
         });
 
         socket.on('score_update', function (data) {
           applyScoreUpdate(data);
         });
 
-        socket.on('match_loaded', function (data) {
+        socket.on('match_loaded', function () {
           fetchQueueInfo();
-          hideOverlays();
         });
 
         socket.on('match_abort', function () {
-          resetDisplay();
+          resetToWaiting();
+          fetchQueueInfo();
         });
       }
 
       // ── Init ─────────────────────────────────────────────────────────────────
-      resetDisplay();
+      resetToWaiting();
       fetchQueueInfo();
     })();
   </script>
