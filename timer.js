@@ -91,14 +91,14 @@ class MatchTimer {
   /** Manually advance to the next period (override). */
   manualAdvance() {
     if (!this.matchId || this.matchEnded) return false;
+    // Clear existing interval before advancing — _advancePeriod() will start
+    // a fresh one if the timer is still running. Do NOT start another one here
+    // or two intervals will race and chain match_end events.
     if (this._interval) {
       clearInterval(this._interval);
       this._interval = null;
     }
     this._advancePeriod();
-    if (this.running && !this.paused && !this.matchEnded) {
-      this._interval = setInterval(() => this._tick(), 1000);
-    }
     return true;
   }
 

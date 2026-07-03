@@ -280,7 +280,8 @@
       matches.forEach(function (m) {
         var opt = document.createElement('option');
         opt.value = m.id;
-        var teams = 'R:' + (m.red1 || '?') + '/' + (m.red2 || '?') + ' vs B:' + (m.blue1 || '?') + '/' + (m.blue2 || '?');
+        var rn = function(t) { return t ? t.number : '?'; };
+        var teams = 'R:' + rn(m.red1_team) + '/' + rn(m.red2_team) + ' vs B:' + rn(m.blue1_team) + '/' + rn(m.blue2_team);
         opt.textContent = 'Match ' + m.match_number + ' — ' + teams + ' [' + m.state + ']';
         matchSelect.appendChild(opt);
       });
@@ -305,9 +306,10 @@
       state.loadedMatch = matchId;
       var m = state.matches.find(function (x) { return x.id === matchId; });
       if (m) {
+        var rn = function(t) { return t ? t.number : '?'; };
         loadedMatchName.textContent = 'Loaded: Match ' + m.match_number +
-          ' — R:' + (m.red1 || '?') + '/' + (m.red2 || '?') +
-          ' vs B:' + (m.blue1 || '?') + '/' + (m.blue2 || '?');
+          ' — R:' + rn(m.red1_team) + '/' + rn(m.red2_team) +
+          ' vs B:' + rn(m.blue1_team) + '/' + rn(m.blue2_team);
         updateMatchStateBadge(m.state);
       }
     }

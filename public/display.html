@@ -223,25 +223,30 @@
         });
       }
 
-      var RP_KEYS = ['PARK_RP', 'PATTERN_RP', 'BALL_RP'];
-      var RP_LABELS = { PARK_RP: 'Park RP', PATTERN_RP: 'Pattern RP', BALL_RP: 'Ball RP' };
+      // rpObj shape from server: { parkRp, patternRp, ballRp, winLossRp, total }
+      var RP_DEFS = [
+        { key: 'parkRp',    label: 'Park RP'    },
+        { key: 'patternRp', label: 'Pattern RP' },
+        { key: 'ballRp',    label: 'Ball RP'    },
+      ];
 
       function renderRp(container, rpObj) {
         while (container.firstChild) container.removeChild(container.firstChild);
-        RP_KEYS.forEach(function (key) {
+        RP_DEFS.forEach(function (def) {
           var badge = document.createElement('div');
-          badge.className = 'rp-badge' + (rpObj && rpObj[key] ? ' earned' : '');
-          badge.textContent = RP_LABELS[key];
+          badge.className = 'rp-badge' + (rpObj && rpObj[def.key] ? ' earned' : '');
+          badge.textContent = def.label + (rpObj && rpObj[def.key] ? ' ×' + rpObj[def.key] : '');
           container.appendChild(badge);
         });
       }
 
       function applyScoreUpdate(data) {
         if (!data) return;
-        redScore.textContent  = data.red  && typeof data.red.score  === 'number' ? data.red.score  : '0';
-        blueScore.textContent = data.blue && typeof data.blue.score === 'number' ? data.blue.score : '0';
-        renderRp(redRp,  data.red  && data.red.rp);
-        renderRp(blueRp, data.blue && data.blue.rp);
+        // server sends { red: { total, ... }, blue: { total, ... }, redRP: { parkRp, patternRp, ballRp }, blueRP }
+        redScore.textContent  = data.red  && data.red.total  != null ? data.red.total  : '0';
+        blueScore.textContent = data.blue && data.blue.total != null ? data.blue.total : '0';
+        renderRp(redRp,  data.redRP);
+        renderRp(blueRp, data.blueRP);
       }
 
       function resetDisplay() {
@@ -268,8 +273,14 @@
           if (!data) return;
           var onField = data.onField;
           if (onField) {
-            setTeams(redTeams,  onField.red,  'red');
-            setTeams(blueTeams, onField.blue, 'blue');
+            setTeams(redTeams, [
+              onField.red1_team  && onField.red1_team.number,
+              onField.red2_team  && onField.red2_team.number,
+            ].filter(Boolean), 'red');
+            setTeams(blueTeams, [
+              onField.blue1_team && onField.blue1_team.number,
+              onField.blue2_team && onField.blue2_team.number,
+            ].filter(Boolean), 'blue');
           }
         }).catch(function () {});
       }
@@ -303,9 +314,7 @@
         });
 
         socket.on('match_loaded', function (data) {
-          if (!data) return;
-          setTeams(redTeams,  data.red,  'red');
-          setTeams(blueTeams, data.blue, 'blue');
+          fetchQueueInfo();
           hideOverlays();
         });
 

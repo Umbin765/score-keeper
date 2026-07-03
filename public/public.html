@@ -244,6 +244,18 @@
         return el;
       }
 
+      // Convert server match shape → render shape
+      function adaptMatch(m) {
+        if (!m) return null;
+        return {
+          matchNumber: m.match_number,
+          state: m.state,
+          winner: m.winner || null,
+          red:  [m.red1_team  && m.red1_team.number,  m.red2_team  && m.red2_team.number ].filter(Boolean),
+          blue: [m.blue1_team && m.blue1_team.number, m.blue2_team && m.blue2_team.number].filter(Boolean),
+        };
+      }
+
       // ── Live section ─────────────────────────────────────────────────────────
 
       function buildLiveNoMatch() {
@@ -278,7 +290,7 @@
         var redNum = document.createElement('div');
         redNum.className = 'live-score-num';
         redNum.id = 'pub-red-score';
-        redNum.textContent = scoreData && scoreData.red ? scoreData.red.score : '0';
+        redNum.textContent = scoreData && scoreData.red ? scoreData.red.total : '0';
         redDiv.appendChild(redLabel);
         redDiv.appendChild(redNum);
 
@@ -290,7 +302,7 @@
         var blueNum = document.createElement('div');
         blueNum.className = 'live-score-num';
         blueNum.id = 'pub-blue-score';
-        blueNum.textContent = scoreData && scoreData.blue ? scoreData.blue.score : '0';
+        blueNum.textContent = scoreData && scoreData.blue ? scoreData.blue.total : '0';
         blueDiv.appendChild(blueLabel);
         blueDiv.appendChild(blueNum);
 
@@ -305,8 +317,8 @@
       function updateLiveScore(data) {
         var rEl = document.getElementById('pub-red-score');
         var bEl = document.getElementById('pub-blue-score');
-        if (rEl && data && data.red) rEl.textContent = data.red.score;
-        if (bEl && data && data.blue) bEl.textContent = data.blue.score;
+        if (rEl && data && data.red) rEl.textContent = data.red.total;
+        if (bEl && data && data.blue) bEl.textContent = data.blue.total;
       }
 
       // ── Upcoming ─────────────────────────────────────────────────────────────
@@ -393,7 +405,7 @@
       // ── Schedule ──────────────────────────────────────────────────────────────
 
       function stateLabel(state, winner) {
-        if (state === 'COMPLETE' || state === 'SCORED') {
+        if (state === 'COMPLETE' || state === 'COMPLETED' || state === 'SCORED') {
           var chip = document.createElement('span');
           chip.className = 'match-state-chip complete';
           chip.textContent = winner ? (winner.toUpperCase() + ' WINS') : 'Complete';
@@ -533,8 +545,9 @@
         }).catch(function () { buildLiveNoMatch(); });
 
         fetch('/api/matches').then(function (r) { return r.ok ? r.json() : []; }).then(function (d) {
-          renderUpcoming(d);
-          renderSchedule(d);
+          var adapted = (d || []).map(adaptMatch);
+          renderUpcoming(adapted);
+          renderSchedule(adapted);
         }).catch(function () {});
 
         fetch('/api/rankings').then(function (r) { return r.ok ? r.json() : []; }).then(function (d) {
@@ -583,15 +596,17 @@
 
         socket.on('queue_update', function () {
           fetch('/api/matches').then(function (r) { return r.ok ? r.json() : []; }).then(function (d) {
-            renderUpcoming(d);
-            renderSchedule(d);
+            var adapted = (d || []).map(adaptMatch);
+            renderUpcoming(adapted);
+            renderSchedule(adapted);
           }).catch(function () {});
         });
 
         socket.on('match_state_change', function () {
           fetch('/api/matches').then(function (r) { return r.ok ? r.json() : []; }).then(function (d) {
-            renderUpcoming(d);
-            renderSchedule(d);
+            var adapted = (d || []).map(adaptMatch);
+            renderUpcoming(adapted);
+            renderSchedule(adapted);
           }).catch(function () {});
         });
 

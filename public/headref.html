@@ -408,8 +408,9 @@
     }
 
     function populateTeams(match) {
-      state.redTeams  = [match.red1,  match.red2].filter(Boolean);
-      state.blueTeams = [match.blue1, match.blue2].filter(Boolean);
+      function teamNum(t) { return t && t.number ? t.number : null; }
+      state.redTeams  = [teamNum(match.red1_team),  teamNum(match.red2_team) ].filter(Boolean);
+      state.blueTeams = [teamNum(match.blue1_team), teamNum(match.blue2_team)].filter(Boolean);
       fillTeamSelect(redTeamSel,  state.redTeams);
       fillTeamSelect(blueTeamSel, state.blueTeams);
     }

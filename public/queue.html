@@ -235,11 +235,22 @@
         });
       }
 
+      // Convert the API shape { match_number, red1_team, red2_team, blue1_team, blue2_team }
+      // into the shape the render helpers expect: { matchNumber, red: [], blue: [] }
+      function adaptMatch(m) {
+        if (!m) return null;
+        return {
+          matchNumber: m.match_number,
+          red:  [m.red1_team  && m.red1_team.number,  m.red2_team  && m.red2_team.number ].filter(Boolean),
+          blue: [m.blue1_team && m.blue1_team.number, m.blue2_team && m.blue2_team.number].filter(Boolean),
+        };
+      }
+
       function applyQueueData(data) {
         if (!data) return;
-        renderOnField(data.onField || null);
-        renderQueueNow(data.queued || null);
-        renderUpcoming(data.upcoming || []);
+        renderOnField(data.onField ? adaptMatch(data.onField) : null);
+        renderQueueNow(data.queued  ? adaptMatch(data.queued)  : null);
+        renderUpcoming((data.upcoming || []).map(adaptMatch));
       }
 
       function fetchAndRender() {
