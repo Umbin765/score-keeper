@@ -103,6 +103,9 @@ class MatchTimer {
   }
 
   _tick() {
+    // Guard: bail out if this interval was orphaned by reset() or abort()
+    if (!this.running || !this.matchId || this.matchEnded) return;
+
     this.timeRemaining = Math.max(0, this.timeRemaining - 1);
     this.io.emit('timer_tick', this.getState());
 
@@ -116,6 +119,9 @@ class MatchTimer {
       clearInterval(this._interval);
       this._interval = null;
     }
+
+    // Guard: bail out if reset/abort was called while we were mid-tick
+    if (!this.matchId || this.matchEnded) return;
 
     this.periodIndex++;
 
@@ -140,6 +146,9 @@ class MatchTimer {
   }
 
   _endMatch() {
+    // Guard: prevent double-fire if called from an orphaned interval
+    if (this.matchEnded) return;
+
     this.running = false;
     this.matchEnded = true;
     this.io.emit('match_end', { matchId: this.matchId, state: this.getState() });
