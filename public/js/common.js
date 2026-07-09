@@ -230,7 +230,7 @@ function applyTimerState(state, timerEl, periodEl) {
   }
 
   if (periodEl && period) {
-    periodEl.textContent = period.name + (period.cycle ? ' (Cycle ' + period.cycle + ')' : '');
+    periodEl.textContent = period.name;
     periodEl.className = 'period-label ' + (period.type || '').toLowerCase();
   } else if (periodEl && !period) {
     periodEl.textContent = 'Waiting';

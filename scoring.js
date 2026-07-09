@@ -25,17 +25,18 @@ function calculateParkScore(db, matchId, alliance) {
   return parkScore;
 }
 
-/** Total artifacts sorted (auto + teleop) for RP threshold checking. */
+/** Total pattern balls (auto + teleop) for RP threshold checking. */
 function calculateArtifactsSorted(db, matchId, alliance) {
-  const row = db.prepare('SELECT auto_classified, teleop_classified FROM match_scores WHERE match_id=? AND alliance=?').get(matchId, alliance);
+  const row = db.prepare('SELECT auto_pattern, teleop_pattern FROM match_scores WHERE match_id=? AND alliance=?').get(matchId, alliance);
   if (!row) return 0;
-  return (row.auto_classified || 0) + (row.teleop_classified || 0);
+  return ((row.auto_pattern || 0) + (row.teleop_pattern || 0)) / 2;
 }
 
-/** Total balls scored (teleop only) for RP threshold checking. */
+/** Total balls scored for RP threshold checking. */
 function calculateBallsScored(db, matchId, alliance) {
-  const row = db.prepare('SELECT teleop_balls FROM match_scores WHERE match_id=? AND alliance=?').get(matchId, alliance);
-  return row ? (row.teleop_balls || 0) : 0;
+  const row = db.prepare('SELECT auto_classified, auto_overflow, teleop_classified, teleop_overflow FROM match_scores WHERE match_id=? AND alliance=?').get(matchId, alliance);
+  if (!row) return 0;
+  return (row.auto_classified || 0) / 3 + (row.auto_overflow || 0) + (row.teleop_classified || 0) / 3 + (row.teleop_overflow || 0);
 }
 
 /**
@@ -57,24 +58,24 @@ function calculateRP(db, matchId, alliance) {
   let rp = 0;
 
   // Win / Tie / Loss
-  if (myScore > oppScore) rp += parseFloat(settings.rp_win || 4);
-  else if (myScore === oppScore) rp += parseFloat(settings.rp_tie || 2);
-  else rp += parseFloat(settings.rp_loss || 0);
+  if (myScore > oppScore) rp += parseFloat(settings.rp_win);
+  else if (myScore === oppScore) rp += parseFloat(settings.rp_tie);
+  else rp += parseFloat(settings.rp_loss);
 
   // PARK RP
   const parkScore = calculateParkScore(db, matchId, alliance);
-  if (parkScore >= parseFloat(settings.rp_park_threshold_2 || 90)) rp += 2;
-  else if (parkScore >= parseFloat(settings.rp_park_threshold_1 || 63)) rp += 1;
+  if (parkScore >= parseFloat(settings.rp_park_threshold_2)) rp += 2;
+  else if (parkScore >= parseFloat(settings.rp_park_threshold_1)) rp += 1;
 
   // PATTERN RP (artifacts sorted)
   const artifacts = calculateArtifactsSorted(db, matchId, alliance);
-  if (artifacts >= parseFloat(settings.rp_pattern_threshold_2 || 33)) rp += 2;
-  else if (artifacts >= parseFloat(settings.rp_pattern_threshold_1 || 23)) rp += 1;
+  if (artifacts >= parseFloat(settings.rp_pattern_threshold_2)) rp += 2;
+  else if (artifacts >= parseFloat(settings.rp_pattern_threshold_1)) rp += 1;
 
   // BALL RP
   const balls = calculateBallsScored(db, matchId, alliance);
-  if (balls >= parseFloat(settings.rp_ball_threshold_2 || 300)) rp += 2;
-  else if (balls >= parseFloat(settings.rp_ball_threshold_1 || 210)) rp += 1;
+  if (balls >= parseFloat(settings.rp_ball_threshold_2)) rp += 2;
+  else if (balls >= parseFloat(settings.rp_ball_threshold_1)) rp += 1;
 
   return rp;
 }
@@ -90,23 +91,23 @@ function computeLiveRP(db, matchId, alliance) {
   const oppScore = calculateScore(db, matchId, opp);
 
   let winLossRp = 0;
-  if (myScore > oppScore) winLossRp = parseFloat(settings.rp_win || 4);
-  else if (myScore === oppScore) winLossRp = parseFloat(settings.rp_tie || 2);
+  if (myScore > oppScore) winLossRp = parseFloat(settings.rp_win);
+  else if (myScore === oppScore) winLossRp = parseFloat(settings.rp_tie);
 
   const parkScore = calculateParkScore(db, matchId, alliance);
   let parkRp = 0;
-  if (parkScore >= parseFloat(settings.rp_park_threshold_2 || 90)) parkRp = 2;
-  else if (parkScore >= parseFloat(settings.rp_park_threshold_1 || 63)) parkRp = 1;
+  if (parkScore >= parseFloat(settings.rp_park_threshold_2)) parkRp = 2;
+  else if (parkScore >= parseFloat(settings.rp_park_threshold_1)) parkRp = 1;
 
   const artifacts = calculateArtifactsSorted(db, matchId, alliance);
   let patternRp = 0;
-  if (artifacts >= parseFloat(settings.rp_pattern_threshold_2 || 33)) patternRp = 2;
-  else if (artifacts >= parseFloat(settings.rp_pattern_threshold_1 || 23)) patternRp = 1;
+  if (artifacts >= parseFloat(settings.rp_pattern_threshold_2)) patternRp = 2;
+  else if (artifacts >= parseFloat(settings.rp_pattern_threshold_1)) patternRp = 1;
 
   const balls = calculateBallsScored(db, matchId, alliance);
   let ballRp = 0;
-  if (balls >= parseFloat(settings.rp_ball_threshold_2 || 300)) ballRp = 2;
-  else if (balls >= parseFloat(settings.rp_ball_threshold_1 || 210)) ballRp = 1;
+  if (balls >= parseFloat(settings.rp_ball_threshold_2)) ballRp = 2;
+  else if (balls >= parseFloat(settings.rp_ball_threshold_1)) ballRp = 1;
 
   return { winLossRp, parkRp, patternRp, ballRp, total: winLossRp + parkRp + patternRp + ballRp };
 }
@@ -153,7 +154,8 @@ function updateRankings(db) {
         else losses++;
       }
 
-      rpBreakdown.push({ matchId: match.id, matchNumber: match.match_number, rp });
+      const { parkRp, patternRp, ballRp, winLossRp } = computeLiveRP(db, match.id, alliance);
+      rpBreakdown.push({ matchId: match.id, matchNumber: match.match_number, rp, parkRp, patternRp, ballRp, winLossRp });
     }
 
     const avgScore = scoreList.length > 0

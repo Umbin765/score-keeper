@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Score Keeper — Documentation</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --text-muted: #8b949e;
+    --heading: #e6edf3;
+    --link: #58a6ff;
+    --code-bg: #1c2128;
+    --accent: #ff7b00;
+    --table-stripe: #1c2128;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+  }
+  .top-bar {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .top-bar a {
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 14px;
+  }
+  .top-bar a:hover { color: var(--link); }
+  .top-bar h1 {
+    font-size: 18px;
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .layout {
+    display: flex;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  .sidebar {
+    width: 280px;
+    min-width: 280px;
+    height: calc(100vh - 49px);
+    position: sticky;
+    top: 49px;
+    overflow-y: auto;
+    border-right: 1px solid var(--border);
+    padding: 16px 0;
+    background: var(--surface);
+  }
+  .sidebar a {
+    display: block;
+    padding: 5px 20px;
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 13px;
+    line-height: 1.4;
+  }
+  .sidebar a:hover { color: var(--link); background: rgba(88,166,255,0.05); }
+  .sidebar a.h2 { padding-left: 20px; font-weight: 600; color: var(--text); margin-top: 8px; }
+  .sidebar a.h3 { padding-left: 36px; }
+  .sidebar a.h4 { padding-left: 52px; font-size: 12px; }
+  .content {
+    flex: 1;
+    min-width: 0;
+    padding: 32px 48px 80px;
+  }
+  /* Markdown rendered styles */
+  .content h1 { font-size: 2em; color: var(--heading); border-bottom: 1px solid var(--border); padding-bottom: 8px; margin: 24px 0 16px; }
+  .content h2 { font-size: 1.5em; color: var(--heading); border-bottom: 1px solid var(--border); padding-bottom: 6px; margin: 32px 0 12px; }
+  .content h3 { font-size: 1.25em; color: var(--heading); margin: 24px 0 8px; }
+  .content h4 { font-size: 1.05em; color: var(--heading); margin: 20px 0 6px; }
+  .content h1:first-child { margin-top: 0; }
+  .content p { margin: 8px 0; }
+  .content a { color: var(--link); text-decoration: none; }
+  .content a:hover { text-decoration: underline; }
+  .content code {
+    background: var(--code-bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.9em;
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  }
+  .content pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+    overflow-x: auto;
+    margin: 12px 0;
+    line-height: 1.45;
+  }
+  .content pre code {
+    background: none;
+    padding: 0;
+    font-size: 0.85em;
+  }
+  .content table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 12px 0;
+    font-size: 0.9em;
+  }
+  .content th {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 8px 12px;
+    text-align: left;
+    font-weight: 600;
+    color: var(--heading);
+  }
+  .content td {
+    border: 1px solid var(--border);
+    padding: 8px 12px;
+  }
+  .content tr:nth-child(even) td { background: var(--table-stripe); }
+  .content ul, .content ol { margin: 8px 0 8px 24px; }
+  .content li { margin: 3px 0; }
+  .content hr { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
+  .content blockquote {
+    border-left: 3px solid var(--accent);
+    padding: 4px 16px;
+    color: var(--text-muted);
+    margin: 12px 0;
+  }
+  .content strong { color: var(--heading); }
+  .loading {
+    text-align: center;
+    padding: 80px 0;
+    color: var(--text-muted);
+    font-size: 1.1em;
+  }
+  /* Search */
+  .search-wrap {
+    margin-left: auto;
+    position: relative;
+  }
+  .search-wrap input {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    padding: 6px 12px 6px 32px;
+    font-size: 14px;
+    width: 260px;
+    outline: none;
+  }
+  .search-wrap input:focus { border-color: var(--accent); }
+  .search-wrap input::placeholder { color: var(--text-muted); }
+  .search-wrap svg {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 14px;
+    height: 14px;
+    fill: var(--text-muted);
+    pointer-events: none;
+  }
+  .search-results {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 4px;
+    width: 420px;
+    max-height: 400px;
+    overflow-y: auto;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    display: none;
+    z-index: 20;
+  }
+  .search-results.open { display: block; }
+  .search-results .sr-item {
+    display: block;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    text-decoration: none;
+    color: var(--text);
+  }
+  .search-results .sr-item:last-child { border-bottom: none; }
+  .search-results .sr-item:hover { background: rgba(88,166,255,0.08); }
+  .search-results .sr-section {
+    font-size: 11px;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 2px;
+  }
+  .search-results .sr-text {
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--text-muted);
+  }
+  .search-results .sr-text mark {
+    background: rgba(255,123,0,0.25);
+    color: var(--heading);
+    border-radius: 2px;
+    padding: 0 1px;
+  }
+  .search-results .sr-empty {
+    padding: 20px 14px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+  .search-kbd {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 11px;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 5px;
+    pointer-events: none;
+  }
+  .content .search-highlight {
+    background: rgba(255,123,0,0.2);
+    outline: 2px solid var(--accent);
+    border-radius: 2px;
+  }
+  @media (max-width: 900px) {
+    .sidebar { display: none; }
+    .content { padding: 20px 16px 60px; }
+    .search-wrap input { width: 160px; }
+    .search-results { width: 300px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+  <a href="/">&larr; Back</a>
+  <h1>Score Keeper Documentation</h1>
+  <div class="search-wrap">
+    <svg viewBox="0 0 16 16"><path d="M11.5 7a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0Zm-.82 4.74a6 6 0 1 1 1.06-1.06l3.04 3.04a.75.75 0 1 1-1.06 1.06l-3.04-3.04Z"/></svg>
+    <input type="text" id="search-input" placeholder="Search docs..." autocomplete="off" />
+    <span class="search-kbd" id="search-kbd">/</span>
+    <div class="search-results" id="search-results"></div>
+  </div>
+</div>
+
+<div class="layout">
+  <nav class="sidebar" id="sidebar"></nav>
+  <main class="content" id="content">
+    <div class="loading">Loading documentation...</div>
+  </main>
+</div>
+
+<script>
+(function() {
+  // Minimal markdown-to-HTML renderer (no dependencies, works offline)
+  // Content source: local README.md served by this same server (trusted)
+  function renderMarkdown(md) {
+    var lines = md.split('\n');
+    var html = [];
+    var inCode = false, codeLines = [];
+    var inTable = false, tableLines = [];
+
+    function esc(s) {
+      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function inlineFormat(s) {
+      s = esc(s);
+      s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+      s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
+      s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+      // Links: only allow relative, http, https protocols
+      s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(m, text, href) {
+        if (/^(https?:\/\/|\/|#|\.)/i.test(href)) {
+          return '<a href="' + href + '">' + text + '</a>';
+        }
+        return text;
+      });
+      return s;
+    }
+
+    function flushTable() {
+      if (!tableLines.length) return;
+      var out = '<table>';
+      for (var i = 0; i < tableLines.length; i++) {
+        if (/^\|[\s\-:|]+\|$/.test(tableLines[i])) continue;
+        var cells = tableLines[i].replace(/^\|/, '').replace(/\|$/, '').split('|');
+        var tag = i === 0 ? 'th' : 'td';
+        out += '<tr>';
+        for (var j = 0; j < cells.length; j++) {
+          out += '<' + tag + '>' + inlineFormat(cells[j].trim()) + '</' + tag + '>';
+        }
+        out += '</tr>';
+      }
+      out += '</table>';
+      html.push(out);
+      tableLines = [];
+      inTable = false;
+    }
+
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+
+      if (/^```/.test(line)) {
+        if (inCode) {
+          html.push('<pre><code>' + esc(codeLines.join('\n')) + '</code></pre>');
+          codeLines = [];
+          inCode = false;
+        } else {
+          if (inTable) flushTable();
+          inCode = true;
+        }
+        continue;
+      }
+      if (inCode) { codeLines.push(line); continue; }
+
+      if (/^\|/.test(line)) {
+        if (!inTable) inTable = true;
+        tableLines.push(line);
+        continue;
+      } else if (inTable) {
+        flushTable();
+      }
+
+      if (/^---+$/.test(line.trim())) { html.push('<hr>'); continue; }
+
+      var hm = line.match(/^(#{1,4})\s+(.*)/);
+      if (hm) {
+        var lvl = hm[1].length;
+        var text = hm[2];
+        var id = text.toLowerCase().replace(/[`*]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+        html.push('<h' + lvl + ' id="' + id + '">' + inlineFormat(text) + '</h' + lvl + '>');
+        continue;
+      }
+
+      if (/^[-*]\s/.test(line.trim())) {
+        html.push('<ul>');
+        while (i < lines.length && /^[-*]\s/.test(lines[i].trim())) {
+          html.push('<li>' + inlineFormat(lines[i].trim().replace(/^[-*]\s/, '')) + '</li>');
+          i++;
+        }
+        html.push('</ul>');
+        i--;
+        continue;
+      }
+
+      if (/^\d+\.\s/.test(line.trim())) {
+        html.push('<ol>');
+        while (i < lines.length && /^\d+\.\s/.test(lines[i].trim())) {
+          html.push('<li>' + inlineFormat(lines[i].trim().replace(/^\d+\.\s/, '')) + '</li>');
+          i++;
+        }
+        html.push('</ol>');
+        i--;
+        continue;
+      }
+
+      if (line.trim() === '') continue;
+
+      html.push('<p>' + inlineFormat(line) + '</p>');
+    }
+
+    if (inTable) flushTable();
+    return html.join('\n');
+  }
+
+  function buildSidebar(contentEl) {
+    var headings = contentEl.querySelectorAll('h2, h3, h4');
+    var nav = document.getElementById('sidebar');
+    for (var i = 0; i < headings.length; i++) {
+      var h = headings[i];
+      if (!h.id) continue;
+      var a = document.createElement('a');
+      a.href = '#' + h.id;
+      a.textContent = h.textContent;
+      a.className = h.tagName.toLowerCase();
+      nav.appendChild(a);
+    }
+  }
+
+  // ── Search engine ──────────────────────────────────────────────────────────
+  var searchIndex = []; // { section, text, el }
+  var searchInput = document.getElementById('search-input');
+  var searchResults = document.getElementById('search-results');
+  var searchKbd = document.getElementById('search-kbd');
+  var prevHighlight = null;
+
+  function buildSearchIndex(contentEl) {
+    var nodes = contentEl.querySelectorAll('h1, h2, h3, h4, p, li, td, th, code, pre');
+    var currentSection = '';
+    for (var i = 0; i < nodes.length; i++) {
+      var node = nodes[i];
+      var tag = node.tagName.toLowerCase();
+      if (tag === 'h1' || tag === 'h2' || tag === 'h3' || tag === 'h4') {
+        currentSection = node.textContent;
+      }
+      var text = node.textContent.trim();
+      if (!text) continue;
+      // Skip children of pre (code inside pre is already covered by pre)
+      if (tag === 'code' && node.parentElement && node.parentElement.tagName === 'PRE') continue;
+      searchIndex.push({ section: currentSection, text: text, el: node });
+    }
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function highlightMatch(text, query) {
+    var idx = text.toLowerCase().indexOf(query.toLowerCase());
+    if (idx === -1) return escapeHtml(text);
+    var start = Math.max(0, idx - 40);
+    var end = Math.min(text.length, idx + query.length + 60);
+    return (start > 0 ? '...' : '') +
+      escapeHtml(text.slice(start, idx)) +
+      '<mark>' + escapeHtml(text.slice(idx, idx + query.length)) + '</mark>' +
+      escapeHtml(text.slice(idx + query.length, end)) +
+      (end < text.length ? '...' : '');
+  }
+
+  function doSearch(query) {
+    // Clear previous highlight
+    if (prevHighlight) {
+      prevHighlight.classList.remove('search-highlight');
+      prevHighlight = null;
+    }
+
+    if (!query || query.length < 2) {
+      searchResults.classList.remove('open');
+      return;
+    }
+    var q = query.toLowerCase();
+    var matches = [];
+    var seen = new Set();
+    for (var i = 0; i < searchIndex.length; i++) {
+      var entry = searchIndex[i];
+      if (entry.text.toLowerCase().indexOf(q) !== -1) {
+        // Deduplicate by element
+        if (seen.has(entry.el)) continue;
+        seen.add(entry.el);
+        matches.push(entry);
+        if (matches.length >= 15) break;
+      }
+    }
+
+    if (matches.length === 0) {
+      searchResults.innerHTML = '<div class="sr-empty">No results for "' + escapeHtml(query) + '"</div>';
+      searchResults.classList.add('open');
+      return;
+    }
+
+    var html = '';
+    for (var j = 0; j < matches.length; j++) {
+      var m = matches[j];
+      html += '<div class="sr-item" data-idx="' + j + '">';
+      html += '<div class="sr-section">' + escapeHtml(m.section) + '</div>';
+      html += '<div class="sr-text">' + highlightMatch(m.text, query) + '</div>';
+      html += '</div>';
+    }
+    searchResults.innerHTML = html;
+    searchResults.classList.add('open');
+
+    // Attach click handlers
+    var items = searchResults.querySelectorAll('.sr-item');
+    for (var k = 0; k < items.length; k++) {
+      (function(idx) {
+        items[idx].addEventListener('click', function() {
+          var target = matches[idx].el;
+          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          target.classList.add('search-highlight');
+          prevHighlight = target;
+          searchResults.classList.remove('open');
+          setTimeout(function() { target.classList.remove('search-highlight'); }, 3000);
+        });
+      })(k);
+    }
+  }
+
+  searchInput.addEventListener('input', function() {
+    doSearch(this.value.trim());
+  });
+
+  // Close results on outside click
+  document.addEventListener('click', function(e) {
+    if (!e.target.closest('.search-wrap')) {
+      searchResults.classList.remove('open');
+    }
+  });
+
+  // "/" keyboard shortcut to focus search
+  document.addEventListener('keydown', function(e) {
+    if (e.key === '/' && document.activeElement !== searchInput) {
+      e.preventDefault();
+      searchInput.focus();
+    }
+    if (e.key === 'Escape') {
+      searchResults.classList.remove('open');
+      searchInput.blur();
+    }
+  });
+
+  // Hide kbd hint when focused
+  searchInput.addEventListener('focus', function() { searchKbd.style.display = 'none'; });
+  searchInput.addEventListener('blur', function() {
+    if (!searchInput.value) searchKbd.style.display = '';
+  });
+
+  // ── Load content ──────────────────────────────────────────────────────────
+  fetch('/api/docs/readme')
+    .then(function(r) { return r.text(); })
+    .then(function(md) {
+      var el = document.getElementById('content');
+      el.innerHTML = renderMarkdown(md);
+      buildSidebar(el);
+      buildSearchIndex(el);
+    })
+    .catch(function() {
+      document.getElementById('content').textContent = 'Failed to load documentation.';
+    });
+})();
+</script>
+</body>
+</html>

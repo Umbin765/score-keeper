@@ -3,3 +3,8 @@ scorekeeper.db
 *.db-shm
 *.db-wal
 .DS_Store
+public/js/xlsx.full.min.js
+.claude/
+.playwright-mcp/
+*.png
+*.jpg

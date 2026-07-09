@@ -6,69 +6,362 @@
   <title>Head Referee — Score Keeper</title>
   <link rel="stylesheet" href="/css/style.css">
   <style>
-    .ref-layout {
+    /* ── Page layout ─────────────────────────────────────────────────────── */
+    .hr-main {
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      padding-bottom: 1rem;
+    }
+
+    /* ── Header timer area ───────────────────────────────────────────────── */
+    .header-center {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.05rem;
+    }
+    .header-timer {
+      font-size: 3.2rem;
+      font-weight: 900;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+    }
+    .header-period {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text2);
+    }
+    .header-scores {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      font-variant-numeric: tabular-nums;
+      font-weight: 900;
+      font-size: 3rem;
+      line-height: 1;
+    }
+    .hs-red  { color: var(--red-light); }
+    .hs-blue { color: var(--blue-light); }
+    .hs-sep  { color: var(--text2); font-weight: 400; font-size: 2rem; }
+
+
+    /* ── Penalty panel ───────────────────────────────────────────────────── */
+    .penalty-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 1rem;
-      padding: 1rem;
     }
-    .full-width { grid-column: 1 / -1; }
-    .alliance-col { display: flex; flex-direction: column; gap: 0.75rem; }
-    .alliance-col.red-col  { border-left: 3px solid var(--red);  padding-left: 0.75rem; }
-    .alliance-col.blue-col { border-left: 3px solid var(--blue); padding-left: 0.75rem; }
-    .col-title { font-size: 1rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.25rem; }
-    .col-title.red-text  { color: var(--red-light); }
-    .col-title.blue-text { color: var(--blue-light); }
-    .team-select { width: 100%; margin-bottom: 0.5rem; }
-    .penalty-btn { margin-bottom: 0.5rem; }
-    .score-bar {
-      display: flex; align-items: center; justify-content: center; gap: 1.5rem;
-      background: var(--bg2); border-top: 1px solid var(--border);
-      padding: 0.5rem 1rem; position: sticky; bottom: 0;
+    .penalty-col {
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
     }
-    .score-bar .score-item { text-align: center; }
-    .score-bar .score-num { font-size: 2rem; font-weight: 900; font-variant-numeric: tabular-nums; }
-    .score-bar .score-lbl { font-size: 0.75rem; color: var(--text2); text-transform: uppercase; }
-    .penalty-log-entry { display: grid; grid-template-columns: auto auto 1fr auto; gap: 0.5rem; align-items: center; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--bg3); font-size: 0.85rem; }
-    .penalty-log-entry:last-child { border-bottom: none; }
-    .log-time { color: var(--text2); font-variant-numeric: tabular-nums; }
-    .log-type { font-weight: 700; }
-    .log-type.minor  { color: var(--yellow); }
-    .log-type.major  { color: var(--red-light); }
-    .log-type.yellow { color: var(--yellow); }
-    .log-type.red    { color: var(--red-light); }
-    .log-team { color: var(--text2); }
-    .log-alliance.red  { color: var(--red-light); }
-    .log-alliance.blue { color: var(--blue-light); }
-    .log-table-wrap { max-height: 200px; overflow-y: auto; }
-    .empty-log { color: var(--text2); font-size: 0.85rem; padding: 0.5rem; text-align: center; }
-    .override-row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.5rem; }
-    .override-row label { font-size: 0.9rem; color: var(--text2); min-width: 80px; }
-    .override-row select, .override-row input { flex: 1; min-width: 80px; }
-    .audit-table-wrap { max-height: 300px; overflow-y: auto; margin-top: 0.75rem; }
+    .penalty-col-title {
+      font-size: 1rem;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      padding-bottom: 0.4rem;
+      border-bottom: 2px solid;
+      margin-bottom: 0.1rem;
+    }
+    .penalty-col-title.red-text  { border-color: var(--red); }
+    .penalty-col-title.blue-text { border-color: var(--blue); }
+
+    /* ── Team picker modal ───────────────────────────────────────────────── */
+    .team-modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      z-index: 500;
+      align-items: center;
+      justify-content: center;
+    }
+    .team-modal-backdrop.open {
+      display: flex;
+    }
+    .team-modal {
+      background: var(--bg2);
+      border: 2px solid var(--border);
+      border-radius: 14px;
+      padding: 1.5rem;
+      min-width: 260px;
+      max-width: 90vw;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    .team-modal-title {
+      font-size: 1rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      text-align: center;
+      color: var(--text);
+      margin-bottom: 0.25rem;
+    }
+    .team-modal-sub {
+      font-size: 0.8rem;
+      color: var(--text2);
+      text-align: center;
+    }
+    .team-modal-btns {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      margin-top: 0.25rem;
+    }
+    .team-modal-team-btn {
+      font-size: 1.1rem;
+      font-weight: 800;
+      padding: 0.85rem 1rem;
+      border-radius: 10px;
+      border: 2px solid;
+      width: 100%;
+      text-align: center;
+      cursor: pointer;
+      transition: filter 0.1s;
+    }
+    .team-modal-team-btn:active { filter: brightness(0.85); }
+    .team-modal-team-btn.for-red  { background: #3d0000; border-color: var(--red-light); color: var(--red-light); }
+    .team-modal-team-btn.for-blue { background: #00112b; border-color: var(--blue-light); color: var(--blue-light); }
+    .team-modal-cancel {
+      font-size: 0.9rem;
+      font-weight: 600;
+      padding: 0.6rem 1rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg3);
+      color: var(--text2);
+      width: 100%;
+      cursor: pointer;
+      margin-top: 0.25rem;
+    }
+    .team-modal-cancel:hover { background: var(--bg4); }
+
+    /* penalty buttons — override base to ensure large touch targets */
+    .penalty-btn {
+      font-size: 1.1rem;
+      font-weight: 800;
+      padding: 0.9rem 1rem;
+      border-radius: 10px;
+      border: 2px solid transparent;
+      min-height: 64px;
+      width: 100%;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .penalty-btn.minor  {
+      background: var(--yellow-bg);
+      border-color: var(--yellow);
+      color: var(--yellow);
+    }
+    .penalty-btn.major  {
+      background: var(--red-bg);
+      border-color: var(--red);
+      color: var(--red-light);
+    }
+    .penalty-btn.yellow-card {
+      background: #1a1200;
+      border-color: #ffaa00;
+      color: #ffaa00;
+    }
+    .penalty-btn.red-card {
+      background: var(--red-bg);
+      border-color: var(--red-light);
+      color: var(--red-light);
+    }
+    .penalty-btn:hover { opacity: 0.85; }
+    .penalty-btn:active { transform: scale(0.96); }
+
+    /* ── Penalty log ─────────────────────────────────────────────────────── */
+    .log-wrap {
+      max-height: 240px;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg);
+    }
+    .log-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .log-table th {
+      position: sticky;
+      top: 0;
+      background: var(--bg3);
+      color: var(--text2);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      padding: 0.5rem 0.75rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    .log-table td {
+      padding: 0.45rem 0.75rem;
+      border-bottom: 1px solid var(--bg3);
+      font-size: 0.88rem;
+      white-space: nowrap;
+    }
+    .log-table tr:last-child td { border-bottom: none; }
+    .log-table tr:hover td { background: var(--bg2); }
+
+    .log-type-cell { font-weight: 700; }
+    .log-type-cell.minor  { color: var(--yellow); }
+    .log-type-cell.major  { color: var(--red-light); }
+    .log-type-cell.yellow { color: #ffaa00; }
+    .log-type-cell.red    { color: var(--red-light); }
+
+    .log-alliance-cell { font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .log-alliance-cell.red  { color: var(--red-light); }
+    .log-alliance-cell.blue { color: var(--blue-light); }
+
+    .log-time-cell { color: var(--text2); font-variant-numeric: tabular-nums; }
+    .log-team-cell { color: var(--text2); }
+
+    .log-empty-row td {
+      text-align: center;
+      color: var(--text2);
+      font-style: italic;
+      padding: 1.2rem;
+    }
+
+    /* ── Post-match actions ──────────────────────────────────────────────── */
+    .actions-row {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+    .btn-commit {
+      flex: 1;
+      min-width: 160px;
+      background: #0066cc;
+      color: #fff;
+      font-size: 1.05rem;
+      font-weight: 700;
+      padding: 0.9rem 1.2rem;
+      border-radius: 8px;
+      border: none;
+    }
+    .btn-commit:hover { background: #0077ee; }
+    .btn-replay {
+      flex: 1;
+      min-width: 160px;
+      background: var(--bg3);
+      color: var(--yellow);
+      font-size: 1.05rem;
+      font-weight: 700;
+      padding: 0.9rem 1.2rem;
+      border-radius: 8px;
+      border: 2px solid var(--yellow);
+    }
+    .btn-replay:hover { background: #1a1500; }
+
+    /* ── No-match state ──────────────────────────────────────────────────── */
+    .no-match-notice {
+      text-align: center;
+      color: var(--text2);
+      font-size: 0.95rem;
+      padding: 0.5rem 0;
+    }
+
+    @media (max-width: 520px) {
+      .penalty-grid { grid-template-columns: 1fr; }
+      .score-bar { gap: 1rem; }
+    }
   </style>
 </head>
 <body>
 
+  <!-- ── Sticky header ────────────────────────────────────────────────────── -->
   <header class="page-header" id="page-header">
-    <span class="page-title">Head Referee</span>
-    <div style="display:flex;align-items:center;gap:0.75rem;">
-      <div class="period-label" id="period-label" style="font-size:0.9rem;margin:0">Waiting</div>
-      <div class="timer-display" id="timer-el" style="font-size:1.8rem">0:00</div>
+    <span class="page-title">HEAD REFEREE</span>
+    <div class="header-center">
+      <div id="period-label" class="period-label header-period">Waiting</div>
+      <div id="timer-el"     class="timer-display header-timer">0:00</div>
+      <div class="header-scores">
+        <span class="hs-red"  id="red-score">0</span>
+        <span class="hs-sep">—</span>
+        <span class="hs-blue" id="blue-score">0</span>
+      </div>
     </div>
   </header>
 
-  <div class="ref-layout" id="ref-layout"></div>
+  <!-- ── Main content ─────────────────────────────────────────────────────── -->
+  <main class="hr-main">
 
-  <div class="score-bar" id="score-bar">
-    <div class="score-item">
-      <div class="score-num red-text" id="red-score">0</div>
-      <div class="score-lbl">RED</div>
+    <!-- ── Penalty panel ─────────────────────────────────────────────────── -->
+    <div class="card" id="penalty-card">
+      <h3 style="margin-bottom:0.9rem">Penalties</h3>
+      <div id="no-match-notice" class="no-match-notice mb-2">No match loaded — waiting for match data.</div>
+      <div class="penalty-grid">
+
+        <!-- RED column -->
+        <div class="penalty-col" id="red-penalty-col">
+          <div class="penalty-col-title red-text">RED Alliance</div>
+          <button class="penalty-btn minor"       data-alliance="red" data-type="minor"   disabled>Minor Foul</button>
+          <button class="penalty-btn major"       data-alliance="red" data-type="major"   disabled>Major Foul</button>
+          <button class="penalty-btn yellow-card" data-alliance="red" data-type="yellow"  disabled>Yellow Card</button>
+          <button class="penalty-btn red-card"    data-alliance="red" data-type="red"     disabled>Red Card</button>
+        </div>
+
+        <!-- BLUE column -->
+        <div class="penalty-col" id="blue-penalty-col">
+          <div class="penalty-col-title blue-text">BLUE Alliance</div>
+          <button class="penalty-btn minor"       data-alliance="blue" data-type="minor"   disabled>Minor Foul</button>
+          <button class="penalty-btn major"       data-alliance="blue" data-type="major"   disabled>Major Foul</button>
+          <button class="penalty-btn yellow-card" data-alliance="blue" data-type="yellow"  disabled>Yellow Card</button>
+          <button class="penalty-btn red-card"    data-alliance="blue" data-type="red"     disabled>Red Card</button>
+        </div>
+
+      </div>
     </div>
-    <div class="vs-divider">VS</div>
-    <div class="score-item">
-      <div class="score-num blue-text" id="blue-score">0</div>
-      <div class="score-lbl">BLUE</div>
+
+    <!-- ── Penalty log ───────────────────────────────────────────────────── -->
+    <div class="card" id="log-card">
+      <h3 style="margin-bottom:0.75rem">Penalty Log</h3>
+      <div class="log-wrap" id="log-wrap">
+        <table class="log-table" id="log-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Type</th>
+              <th>Team</th>
+              <th>Alliance</th>
+            </tr>
+          </thead>
+          <tbody id="log-tbody">
+            <tr class="log-empty-row"><td colspan="4">No penalties yet this match.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── Post-match actions ────────────────────────────────────────────── -->
+    <div class="card" id="actions-card">
+      <h3 style="margin-bottom:0.75rem">Post-Match Actions</h3>
+      <div class="actions-row">
+        <button class="btn-commit" id="btn-commit">Commit Scores</button>
+        <button class="btn-replay" id="btn-replay">Mark for Replay</button>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ── Team picker modal ────────────────────────────────────────────────── -->
+  <div class="team-modal-backdrop" id="team-modal-backdrop">
+    <div class="team-modal" id="team-modal">
+      <div class="team-modal-title" id="team-modal-title">Select Team</div>
+      <div class="team-modal-sub" id="team-modal-sub">Who receives this card?</div>
+      <div class="team-modal-btns" id="team-modal-btns">
+        <!-- populated dynamically -->
+      </div>
+      <button class="team-modal-cancel" id="team-modal-cancel">Cancel</button>
     </div>
   </div>
 
@@ -78,267 +371,151 @@
   (function () {
     'use strict';
 
+    // ── State ────────────────────────────────────────────────────────────────
     var state = {
-      matchId: null,
-      redTeams: [],
+      matchId:   null,
+      redTeams:  [],
       blueTeams: [],
     };
 
+    var matchRunning = false;
+
+    // ── Element refs ─────────────────────────────────────────────────────────
+    var timerEl      = document.getElementById('timer-el');
+    var periodLbl    = document.getElementById('period-label');
+    var redScoreEl   = document.getElementById('red-score');
+    var blueScoreEl  = document.getElementById('blue-score');
+    var logTbody     = document.getElementById('log-tbody');
+    var noMatchNote  = document.getElementById('no-match-notice');
+
+    // ── Modal elements ───────────────────────────────────────────────────────
+    var modalBackdrop = document.getElementById('team-modal-backdrop');
+    var modalTitle    = document.getElementById('team-modal-title');
+    var modalSub      = document.getElementById('team-modal-sub');
+    var modalBtns     = document.getElementById('team-modal-btns');
+    var modalCancel   = document.getElementById('team-modal-cancel');
+
+    // ── Card selector: types requiring a team ────────────────────────────────
+    var CARD_TYPES = { 'yellow': true, 'red': true };
+
+    // ── Boot: PIN gate then init ──────────────────────────────────────────────
     SK.mountPinPad('headref', 'Head Referee').then(function () {
       SK.addLogoutButton(document.getElementById('page-header'));
       init();
     });
 
-    var timerEl     = document.getElementById('timer-el');
-    var periodLbl   = document.getElementById('period-label');
-    var redScoreEl  = document.getElementById('red-score');
-    var blueScoreEl = document.getElementById('blue-score');
-    var layout      = document.getElementById('ref-layout');
-
-    var redTeamSel, blueTeamSel;
-    var logBody, auditBody;
-
-    // Score override field options
-    var OVERRIDE_FIELDS = [
-      'auto_classified','auto_overflow','auto_leave','auto_pattern',
-      'teleop_classified','teleop_overflow','teleop_balls',
-      'park','penalties',
-    ];
-
     function init() {
-      buildLayout();
+      setButtonsEnabled(false);
+      wireButtons();
       fetchTimerState();
       connectSocketEvents();
     }
 
-    // ── Build layout ───────────────────────────────────────────────────────────
-    function buildLayout() {
-      // ── Red column ──
-      var redCol = document.createElement('div');
-      redCol.className = 'alliance-col red-col';
-
-      var redTitle = document.createElement('div');
-      redTitle.className = 'col-title red-text';
-      redTitle.textContent = 'RED Penalties';
-      redCol.appendChild(redTitle);
-
-      redTeamSel = document.createElement('select');
-      redTeamSel.className = 'team-select';
-      appendPlaceholder(redTeamSel, 'Select Team');
-      redCol.appendChild(redTeamSel);
-
-      redCol.appendChild(makePenaltyBtn('Minor Foul',  'minor',  'red'));
-      redCol.appendChild(makePenaltyBtn('Major Foul',  'major',  'red'));
-      redCol.appendChild(makePenaltyBtn('Yellow Card', 'yellow', 'red'));
-      redCol.appendChild(makePenaltyBtn('Red Card',    'red',    'red'));
-
-      // ── Blue column ──
-      var blueCol = document.createElement('div');
-      blueCol.className = 'alliance-col blue-col';
-
-      var blueTitle = document.createElement('div');
-      blueTitle.className = 'col-title blue-text';
-      blueTitle.textContent = 'BLUE Penalties';
-      blueCol.appendChild(blueTitle);
-
-      blueTeamSel = document.createElement('select');
-      blueTeamSel.className = 'team-select';
-      appendPlaceholder(blueTeamSel, 'Select Team');
-      blueCol.appendChild(blueTeamSel);
-
-      blueCol.appendChild(makePenaltyBtn('Minor Foul',  'minor',  'blue'));
-      blueCol.appendChild(makePenaltyBtn('Major Foul',  'major',  'blue'));
-      blueCol.appendChild(makePenaltyBtn('Yellow Card', 'yellow', 'blue'));
-      blueCol.appendChild(makePenaltyBtn('Red Card',    'red',    'blue'));
-
-      // ── Penalty log ──
-      var logSection = document.createElement('div');
-      logSection.className = 'card full-width';
-
-      var logTitle = document.createElement('h3');
-      logTitle.textContent = 'Penalty Log';
-      logSection.appendChild(logTitle);
-
-      var logWrap = document.createElement('div');
-      logWrap.className = 'log-table-wrap';
-      logBody = document.createElement('div');
-      renderEmptyLog();
-      logWrap.appendChild(logBody);
-      logSection.appendChild(logWrap);
-
-      // ── Score Override (head ref only) ──
-      var overrideSection = document.createElement('div');
-      overrideSection.className = 'card full-width mt-2';
-
-      var overrideTitle = document.createElement('h2');
-      overrideTitle.textContent = 'Score Override';
-      overrideSection.appendChild(overrideTitle);
-
-      var overAllianceSel = document.createElement('select');
-      overAllianceSel.style.marginRight = '0.5rem';
-      appendOption(overAllianceSel, 'red', 'RED');
-      appendOption(overAllianceSel, 'blue', 'BLUE');
-
-      var overFieldSel = document.createElement('select');
-      OVERRIDE_FIELDS.forEach(function (f) { appendOption(overFieldSel, f, f); });
-
-      var overValueInput = document.createElement('input');
-      overValueInput.type = 'number';
-      overValueInput.min = '0';
-      overValueInput.placeholder = 'Value';
-      overValueInput.style.width = '80px';
-
-      var overBtn = document.createElement('button');
-      overBtn.className = 'control-btn';
-      overBtn.textContent = 'Apply Override';
-      overBtn.addEventListener('click', function () {
-        applyOverride(overAllianceSel.value, overFieldSel.value, parseInt(overValueInput.value, 10));
-      });
-
-      var overRow = document.createElement('div');
-      overRow.className = 'override-row';
-      var ovLabel = document.createElement('label');
-      ovLabel.textContent = 'Alliance:';
-      overRow.appendChild(ovLabel);
-      overRow.appendChild(overAllianceSel);
-      var fLabel = document.createElement('label');
-      fLabel.textContent = 'Field:';
-      overRow.appendChild(fLabel);
-      overRow.appendChild(overFieldSel);
-      var vLabel = document.createElement('label');
-      vLabel.textContent = 'Value:';
-      overRow.appendChild(vLabel);
-      overRow.appendChild(overValueInput);
-      overRow.appendChild(overBtn);
-      overrideSection.appendChild(overRow);
-
-      // ── Post-match actions ──
-      var actionsSection = document.createElement('div');
-      actionsSection.className = 'card full-width mt-2';
-
-      var actTitle = document.createElement('h2');
-      actTitle.textContent = 'Post-Match Actions';
-      actionsSection.appendChild(actTitle);
-
-      var actRow = document.createElement('div');
-      actRow.className = 'btn-row';
-
-      var commitBtn = document.createElement('button');
-      commitBtn.className = 'control-btn commit';
-      commitBtn.textContent = 'Commit Scores';
-      commitBtn.addEventListener('click', commitScores);
-
-      var replayBtn = document.createElement('button');
-      replayBtn.className = 'control-btn';
-      replayBtn.textContent = 'Replay Match';
-      replayBtn.addEventListener('click', replayMatch);
-
-      var auditBtn = document.createElement('button');
-      auditBtn.className = 'control-btn';
-      auditBtn.textContent = 'Refresh Audit Log';
-      auditBtn.addEventListener('click', fetchAuditLog);
-
-      actRow.appendChild(commitBtn);
-      actRow.appendChild(replayBtn);
-      actRow.appendChild(auditBtn);
-      actionsSection.appendChild(actRow);
-
-      // ── Audit log ──
-      var auditSection = document.createElement('div');
-      auditSection.className = 'card full-width mt-2';
-
-      var auditTitle = document.createElement('h2');
-      auditTitle.textContent = 'Audit Log';
-      auditSection.appendChild(auditTitle);
-
-      var auditWrap = document.createElement('div');
-      auditWrap.className = 'audit-table-wrap';
-      auditBody = document.createElement('table');
-      auditBody.className = 'data-table';
-
-      var thead = document.createElement('thead');
-      var htr = document.createElement('tr');
-      ['Time','User','Action','Details'].forEach(function (h) {
-        var th = document.createElement('th');
-        th.textContent = h;
-        htr.appendChild(th);
-      });
-      thead.appendChild(htr);
-      auditBody.appendChild(thead);
-      var tbody = document.createElement('tbody');
-      tbody.id = 'audit-tbody';
-      auditBody.appendChild(tbody);
-      auditWrap.appendChild(auditBody);
-      auditSection.appendChild(auditWrap);
-
-      // Append everything
-      layout.appendChild(redCol);
-      layout.appendChild(blueCol);
-      layout.appendChild(logSection);
-      layout.appendChild(overrideSection);
-      layout.appendChild(actionsSection);
-      layout.appendChild(auditSection);
+    // ── Enable / disable all penalty buttons ─────────────────────────────────
+    function setButtonsEnabled(enabled) {
+      var btns = document.querySelectorAll('.penalty-btn');
+      for (var i = 0; i < btns.length; i++) {
+        if (enabled) {
+          btns[i].removeAttribute('disabled');
+        } else {
+          btns[i].setAttribute('disabled', '');
+        }
+      }
     }
 
-    // ── Helpers ────────────────────────────────────────────────────────────────
-    function appendPlaceholder(sel, text) {
-      var opt = document.createElement('option');
-      opt.value = '';
-      opt.textContent = text;
-      sel.appendChild(opt);
+    // ── Wire penalty buttons ──────────────────────────────────────────────────
+    function wireButtons() {
+      var btns = document.querySelectorAll('.penalty-btn');
+      for (var i = 0; i < btns.length; i++) {
+        (function (btn) {
+          btn.addEventListener('click', function () {
+            emitPenalty(btn.dataset.alliance, btn.dataset.type);
+          });
+        })(btns[i]);
+      }
+
+      document.getElementById('btn-commit').addEventListener('click', commitScores);
+      document.getElementById('btn-replay').addEventListener('click', replayMatch);
     }
 
-    function appendOption(sel, val, text) {
-      var opt = document.createElement('option');
-      opt.value = val;
-      opt.textContent = text;
-      sel.appendChild(opt);
-    }
-
-    function makePenaltyBtn(label, type, alliance) {
-      var btn = document.createElement('button');
-      btn.className = 'penalty-btn ' + type;
-      btn.textContent = label;
-      btn.addEventListener('click', function () { emitPenalty(alliance, type); });
-      return btn;
-    }
-
-    // ── Socket / API ───────────────────────────────────────────────────────────
-    var socket;
-    function getSocket() {
-      if (!socket) socket = SK.connectSocket();
-      return socket;
-    }
-
+    // ── Emit penalty ─────────────────────────────────────────────────────────
     function emitPenalty(alliance, type) {
-      if (!state.matchId) { showToast('No match loaded', 'error'); return; }
-      var teamSel = alliance === 'red' ? redTeamSel : blueTeamSel;
-      var teamNumber = teamSel.value || null;
+      if (!matchRunning) {
+        showToast('Match is not active', 'error');
+        return;
+      }
+      if (!state.matchId) {
+        showToast('No match loaded', 'error');
+        return;
+      }
+
+      if (CARD_TYPES[type]) {
+        // Show team picker modal before emitting
+        showTeamModal(alliance, type);
+        return;
+      }
+
+      dispatchPenalty(alliance, type, null);
+    }
+
+    function dispatchPenalty(alliance, type, teamNumber) {
       getSocket().emit('penalty', {
-        matchId: state.matchId,
-        alliance: alliance,
+        matchId:    state.matchId,
+        alliance:   alliance,
         teamNumber: teamNumber,
-        type: type,
+        type:       type,
       });
     }
 
-    function applyOverride(alliance, field, value) {
-      if (!state.matchId) { showToast('No match loaded', 'error'); return; }
-      if (isNaN(value)) { showToast('Enter a valid value', 'error'); return; }
-      fetch('/api/matches/' + state.matchId + '/override', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ alliance: alliance, field: field, value: value }),
-      })
-        .then(function (r) { if (!r.ok) throw new Error('Failed'); return r.json(); })
-        .then(function () { showToast('Override applied', 'success'); fetchAuditLog(); })
-        .catch(function () { showToast('Override failed', 'error'); });
+    // ── Team picker modal ─────────────────────────────────────────────────────
+    function showTeamModal(alliance, type) {
+      var teams     = alliance === 'red' ? state.redTeams : state.blueTeams;
+      var typeName  = type === 'yellow' ? 'Yellow Card' : 'Red Card';
+      var colorCls  = 'for-' + alliance;
+
+      modalTitle.textContent = typeName;
+      modalSub.textContent   = (alliance.toUpperCase()) + ' Alliance — who receives this card?';
+
+      // Build team buttons
+      while (modalBtns.firstChild) modalBtns.removeChild(modalBtns.firstChild);
+      if (teams.length === 0) {
+        var none = document.createElement('div');
+        none.style.cssText = 'text-align:center;color:var(--text2);padding:0.5rem';
+        none.textContent = 'No teams loaded for this alliance.';
+        modalBtns.appendChild(none);
+      } else {
+        teams.forEach(function (teamNum) {
+          var btn = document.createElement('button');
+          btn.className = 'team-modal-team-btn ' + colorCls;
+          btn.textContent = 'Team ' + teamNum;
+          btn.addEventListener('click', function () {
+            closeTeamModal();
+            dispatchPenalty(alliance, type, teamNum);
+          });
+          modalBtns.appendChild(btn);
+        });
+      }
+
+      modalBackdrop.classList.add('open');
     }
 
+    function closeTeamModal() {
+      modalBackdrop.classList.remove('open');
+    }
+
+    modalCancel.addEventListener('click', closeTeamModal);
+    modalBackdrop.addEventListener('click', function (e) {
+      if (e.target === modalBackdrop) closeTeamModal();
+    });
+
+    // ── Post-match actions ────────────────────────────────────────────────────
     function commitScores() {
       if (!state.matchId) { showToast('No match loaded', 'error'); return; }
       fetch('/api/matches/' + state.matchId + '/commit', { method: 'POST' })
-        .then(function (r) { if (!r.ok) throw new Error('Failed'); return r.json(); })
+        .then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        })
         .then(function () { showToast('Scores committed', 'success'); })
         .catch(function () { showToast('Commit failed', 'error'); });
     }
@@ -347,125 +524,21 @@
       if (!state.matchId) { showToast('No match loaded', 'error'); return; }
       if (!confirm('Mark this match for replay?')) return;
       fetch('/api/matches/' + state.matchId + '/replay', { method: 'POST' })
-        .then(function (r) { if (!r.ok) throw new Error('Failed'); return r.json(); })
-        .then(function () { showToast('Match marked for replay', 'success'); })
-        .catch(function () { showToast('Replay failed', 'error'); });
-    }
-
-    function fetchAuditLog() {
-      if (!state.matchId) return;
-      fetch('/api/matches/' + state.matchId + '/audit')
-        .then(function (r) { return r.json(); })
-        .then(function (entries) { renderAuditLog(entries); })
-        .catch(function () {});
-    }
-
-    function renderAuditLog(entries) {
-      var tbody = document.getElementById('audit-tbody');
-      if (!tbody) return;
-      while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
-      if (!entries || !entries.length) {
-        var row = document.createElement('tr');
-        var td = document.createElement('td');
-        td.colSpan = 4;
-        td.textContent = 'No audit entries';
-        td.style.color = 'var(--text2)';
-        td.style.textAlign = 'center';
-        row.appendChild(td);
-        tbody.appendChild(row);
-        return;
-      }
-      entries.forEach(function (e) {
-        var row = document.createElement('tr');
-        [e.created_at || '', e.user || 'system', e.action || '', e.details || ''].forEach(function (cell) {
-          var td = document.createElement('td');
-          td.textContent = cell;
-          row.appendChild(td);
-        });
-        tbody.appendChild(row);
-      });
-    }
-
-    // ── Timer / match fetch ────────────────────────────────────────────────────
-    function fetchTimerState() {
-      fetch('/api/timer')
-        .then(function (r) { return r.json(); })
-        .then(function (ts) {
-          SK.applyTimerState(ts, timerEl, periodLbl);
-          if (ts.matchId) {
-            state.matchId = ts.matchId;
-            fetchMatch(ts.matchId);
-          }
+        .then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
         })
-        .catch(function () {});
+        .then(function () { showToast('Match marked for replay', 'success'); })
+        .catch(function () { showToast('Replay request failed', 'error'); });
     }
 
-    function fetchMatch(matchId) {
-      fetch('/api/matches/' + matchId)
-        .then(function (r) { return r.json(); })
-        .then(function (m) { if (m) populateTeams(m); })
-        .catch(function () {});
+    // ── Socket ────────────────────────────────────────────────────────────────
+    var socket;
+    function getSocket() {
+      if (!socket) socket = SK.connectSocket();
+      return socket;
     }
 
-    function populateTeams(match) {
-      function teamNum(t) { return t && t.number ? t.number : null; }
-      state.redTeams  = [teamNum(match.red1_team),  teamNum(match.red2_team) ].filter(Boolean);
-      state.blueTeams = [teamNum(match.blue1_team), teamNum(match.blue2_team)].filter(Boolean);
-      fillTeamSelect(redTeamSel,  state.redTeams);
-      fillTeamSelect(blueTeamSel, state.blueTeams);
-    }
-
-    function fillTeamSelect(sel, teams) {
-      while (sel.firstChild) sel.removeChild(sel.firstChild);
-      appendPlaceholder(sel, 'Select Team');
-      teams.forEach(function (t) {
-        var opt = document.createElement('option');
-        opt.value = t;
-        opt.textContent = 'Team ' + t;
-        sel.appendChild(opt);
-      });
-    }
-
-    // ── Penalty log ────────────────────────────────────────────────────────────
-    function renderEmptyLog() {
-      while (logBody.firstChild) logBody.removeChild(logBody.firstChild);
-      var empty = document.createElement('div');
-      empty.className = 'empty-log';
-      empty.textContent = 'No penalties yet';
-      logBody.appendChild(empty);
-    }
-
-    function addLogEntry(entry) {
-      if (logBody.querySelector('.empty-log')) {
-        while (logBody.firstChild) logBody.removeChild(logBody.firstChild);
-      }
-      var row = document.createElement('div');
-      row.className = 'penalty-log-entry';
-
-      var timeEl = document.createElement('span');
-      timeEl.className = 'log-time';
-      timeEl.textContent = entry.time || '--:--';
-
-      var typeEl = document.createElement('span');
-      typeEl.className = 'log-type ' + (entry.type || '');
-      typeEl.textContent = (entry.type || '').toUpperCase();
-
-      var teamEl = document.createElement('span');
-      teamEl.className = 'log-team';
-      teamEl.textContent = entry.teamNumber ? 'Team ' + entry.teamNumber : 'N/A';
-
-      var allianceEl = document.createElement('span');
-      allianceEl.className = 'log-alliance ' + (entry.alliance || '');
-      allianceEl.textContent = (entry.alliance || '').toUpperCase();
-
-      row.appendChild(timeEl);
-      row.appendChild(typeEl);
-      row.appendChild(teamEl);
-      row.appendChild(allianceEl);
-      logBody.insertBefore(row, logBody.firstChild);
-    }
-
-    // ── Socket events ──────────────────────────────────────────────────────────
     function connectSocketEvents() {
       var sock = getSocket();
       if (!sock) return;
@@ -485,17 +558,160 @@
       });
 
       sock.on('penalty_added', function (entry) {
-        addLogEntry(entry);
-        showToast((entry.alliance || '').toUpperCase() + ' ' + (entry.type || '') + ' penalty', 'error');
+        prependLogRow(entry);
+        var label = (entry.alliance || '').toUpperCase() + ' — ' + formatPenaltyType(entry.type);
+        showToast(label, 'error');
+      });
+
+      sock.on('match_start', function () {
+        matchRunning = true;
+        setButtonsEnabled(true);
+      });
+
+      sock.on('match_end', function () {
+        matchRunning = false;
+        setButtonsEnabled(false);
       });
 
       sock.on('match_loaded', function (data) {
+        matchRunning = false;
+        setButtonsEnabled(false);
         if (data && data.matchId) {
           state.matchId = data.matchId;
           fetchMatch(data.matchId);
+          fetchPenalties(data.matchId);
         }
-        renderEmptyLog();
+        resetLog();
+        updateNoMatchNotice();
       });
+
+      sock.on('match_abort', function () {
+        matchRunning = false;
+        setButtonsEnabled(false);
+        resetLog();
+        updateNoMatchNotice();
+      });
+    }
+
+    // ── Timer & match fetch ───────────────────────────────────────────────────
+    function fetchTimerState() {
+      fetch('/api/timer')
+        .then(function (r) { return r.json(); })
+        .then(function (ts) {
+          SK.applyTimerState(ts, timerEl, periodLbl);
+          if (ts.matchId) {
+            state.matchId = ts.matchId;
+            fetchMatch(ts.matchId);
+            fetchPenalties(ts.matchId);
+            updateNoMatchNotice();
+          }
+        })
+        .catch(function () {});
+    }
+
+    function fetchMatch(matchId) {
+      fetch('/api/matches/' + matchId)
+        .then(function (r) { return r.json(); })
+        .then(function (m) { if (m) populateTeams(m); })
+        .catch(function () {});
+    }
+
+    function populateTeams(match) {
+      function num(t) { return t && t.number ? t.number : null; }
+      state.redTeams  = [num(match.red1_team),  num(match.red2_team) ].filter(Boolean);
+      state.blueTeams = [num(match.blue1_team), num(match.blue2_team)].filter(Boolean);
+    }
+
+    // ── Penalty log ───────────────────────────────────────────────────────────
+    function fetchPenalties(matchId) {
+      fetch('/api/matches/' + matchId + '/penalties')
+        .then(function (r) { return r.json(); })
+        .then(function (list) {
+          resetLog();
+          if (!list || !list.length) return;
+          // API returns oldest-first; we want newest-first in the table,
+          // so iterate in reverse and prepend.
+          for (var i = list.length - 1; i >= 0; i--) {
+            var p = list[i];
+            prependLogRow({
+              match_time:  p.match_time || (p.period_name || '--'),
+              type:        p.type,
+              team_number: p.team_number,
+              alliance:    p.alliance,
+            });
+          }
+        })
+        .catch(function () {});
+    }
+
+    function resetLog() {
+      while (logTbody.firstChild) logTbody.removeChild(logTbody.firstChild);
+      appendEmptyRow();
+    }
+
+    function appendEmptyRow() {
+      var tr = document.createElement('tr');
+      tr.className = 'log-empty-row';
+      var td = document.createElement('td');
+      td.colSpan = 4;
+      td.textContent = 'No penalties yet this match.';
+      tr.appendChild(td);
+      logTbody.appendChild(tr);
+    }
+
+    function prependLogRow(entry) {
+      // Remove empty-state row if present
+      var emptyRow = logTbody.querySelector('.log-empty-row');
+      if (emptyRow) logTbody.removeChild(emptyRow);
+
+      var tr = document.createElement('tr');
+
+      var tdTime = document.createElement('td');
+      tdTime.className = 'log-time-cell';
+      tdTime.textContent = entry.match_time != null ? String(entry.match_time) : (entry.time || '--');
+
+      var tdType = document.createElement('td');
+      tdType.className = 'log-type-cell ' + (entry.type || '');
+      tdType.textContent = formatPenaltyType(entry.type);
+
+      var tdTeam = document.createElement('td');
+      tdTeam.className = 'log-team-cell';
+      tdTeam.textContent = (entry.team_number || entry.teamNumber)
+        ? 'Team ' + (entry.team_number || entry.teamNumber)
+        : '—';
+
+      var tdAlliance = document.createElement('td');
+      tdAlliance.className = 'log-alliance-cell ' + (entry.alliance || '');
+      tdAlliance.textContent = (entry.alliance || '').toUpperCase();
+
+      tr.appendChild(tdTime);
+      tr.appendChild(tdType);
+      tr.appendChild(tdTeam);
+      tr.appendChild(tdAlliance);
+
+      // Insert at top (newest first)
+      logTbody.insertBefore(tr, logTbody.firstChild);
+
+      // Auto-scroll to top
+      var wrap = document.getElementById('log-wrap');
+      if (wrap) wrap.scrollTop = 0;
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+    function formatPenaltyType(type) {
+      switch (type) {
+        case 'minor':  return 'Minor Foul';
+        case 'major':  return 'Major Foul';
+        case 'yellow': return 'Yellow Card';
+        case 'red':    return 'Red Card';
+        default:       return (type || 'Unknown').toUpperCase();
+      }
+    }
+
+    function updateNoMatchNotice() {
+      if (noMatchNote) {
+        noMatchNote.style.display = state.matchId ? 'none' : 'block';
+      }
     }
 
   })();

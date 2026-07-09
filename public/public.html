@@ -536,11 +536,18 @@
       // ── Data fetching ────────────────────────────────────────────────────────
 
       function fetchAll() {
+        // Chain queue + timer fetches sequentially so timer is applied after timerEl exists
         fetch('/api/queue').then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
           if (d && d.onField) {
             buildLiveMatch(null);
           } else {
             buildLiveNoMatch();
+          }
+          // Now timerEl is either set (live match) or null (no match) — apply timer state
+          return fetch('/api/timer');
+        }).then(function (r) { return r && r.ok ? r.json() : null; }).then(function (ts) {
+          if (ts && ts.matchId && timerEl) {
+            SK.applyTimerState(ts, timerEl, periodEl);
           }
         }).catch(function () { buildLiveNoMatch(); });
 
@@ -563,8 +570,23 @@
 
       var socket = SK.connectSocket();
       if (socket) {
+        // timer_state fires on socket connect — only update values, don't rebuild DOM
+        socket.on('timer_state', function (state) {
+          if (timerEl && state && state.matchId) {
+            SK.applyTimerState(state, timerEl, periodEl);
+          }
+        });
+
         socket.on('timer_tick', function (state) {
           if (timerEl) SK.applyTimerState(state, timerEl, null);
+        });
+
+        socket.on('match_paused', function (state) {
+          if (timerEl) SK.applyTimerState(state, timerEl, periodEl);
+        });
+
+        socket.on('match_resumed', function (state) {
+          if (timerEl) SK.applyTimerState(state, timerEl, periodEl);
         });
 
         socket.on('period_change', function (state) {

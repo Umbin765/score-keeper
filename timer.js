@@ -9,6 +9,7 @@ class MatchTimer {
   constructor(io) {
     this.io = io;
     this._interval = null;
+    this.onPeriodChange = null; // callback(state) fired after every period advance
     this.reset();
   }
 
@@ -138,6 +139,8 @@ class MatchTimer {
     }
 
     this.io.emit('period_change', this.getState());
+
+    if (this.onPeriodChange) this.onPeriodChange(this.getState());
 
     // Auto-resume interval after period change
     if (this.running && !this.paused) {

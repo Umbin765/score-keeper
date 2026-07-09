@@ -28,10 +28,20 @@
     .form-row { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; }
     .form-row label { min-width: 160px; font-size: 0.9rem; color: var(--text2); }
     .form-row input, .form-row select { flex: 1; min-width: 100px; }
-    .period-row {
+    .period-row, .period-header {
       display: grid;
       grid-template-columns: 2rem 1fr 60px 100px 80px 80px 2rem 2rem 2rem;
       gap: 0.4rem; align-items: center; padding: 0.4rem 0.5rem;
+    }
+    .period-header {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text2);
+      margin-bottom: 0.25rem;
+    }
+    .period-row {
       background: var(--bg3); border-radius: 6px; margin-bottom: 0.35rem;
     }
     .period-row .pos-num { color: var(--text2); font-size: 0.85rem; text-align: center; }
@@ -60,6 +70,7 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="/js/common.js"></script>
+  <script src="/js/xlsx.full.min.js"></script>
   <script>
   (function () {
     'use strict';
@@ -186,15 +197,15 @@
       addRow.appendChild(addBtn);
       addSection.appendChild(addRow);
 
-      // CSV Import
+      // File Import (CSV or Excel)
       var importRow = document.createElement('div');
       importRow.className = 'form-row mt-2';
       var fileInput = document.createElement('input');
       fileInput.type = 'file';
-      fileInput.accept = '.csv';
+      fileInput.accept = '.csv,.xlsx,.xls';
       var importBtn = document.createElement('button');
-      importBtn.textContent = 'Import CSV';
-      importBtn.addEventListener('click', function () { importCsv(fileInput); });
+      importBtn.textContent = 'Import CSV / Excel';
+      importBtn.addEventListener('click', function () { importFile(fileInput); });
       importRow.appendChild(fileInput);
       importRow.appendChild(importBtn);
       addSection.appendChild(importRow);
@@ -268,32 +279,76 @@
         .catch(function () { showToast('Failed to delete', 'error'); });
     }
 
-    function importCsv(fileInput) {
+    function importFile(fileInput) {
       var file = fileInput.files && fileInput.files[0];
-      if (!file) { showToast('Select a CSV file first', 'error'); return; }
+      if (!file) { showToast('Select a CSV or Excel file first', 'error'); return; }
+      var ext = file.name.split('.').pop().toLowerCase();
+      if (ext === 'csv') {
+        importFromCsv(file);
+      } else if (ext === 'xlsx' || ext === 'xls') {
+        importFromExcel(file);
+      } else {
+        showToast('Unsupported file type. Use .csv, .xlsx or .xls', 'error');
+      }
+    }
+
+    function sendTeams(teams) {
+      if (!teams.length) { showToast('No valid rows found', 'error'); return; }
+      fetch('/api/teams/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ teams: teams }),
+      })
+        .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+        .then(function () { showToast('Imported ' + teams.length + ' teams', 'success'); fetchTeams(); })
+        .catch(function () { showToast('Import failed', 'error'); });
+    }
+
+    function importFromCsv(file) {
       var reader = new FileReader();
       reader.onload = function (e) {
-        var text = e.target.result;
-        var lines = text.split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
+        var lines = e.target.result.split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
         var teams = [];
         lines.forEach(function (line, i) {
-          if (i === 0 && line.toLowerCase().startsWith('number')) return; // skip header
+          if (i === 0 && isNaN(parseInt(line.split(',')[0], 10))) return; // skip header
           var parts = line.split(',');
           var num  = parseInt(parts[0], 10);
           var name = (parts[1] || '').trim().replace(/^"|"$/g, '');
           if (!isNaN(num) && name) teams.push({ number: num, name: name });
         });
-        if (!teams.length) { showToast('No valid rows in CSV', 'error'); return; }
-        fetch('/api/teams/import', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ teams: teams }),
-        })
-          .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
-          .then(function () { showToast('Imported ' + teams.length + ' teams', 'success'); fetchTeams(); })
-          .catch(function () { showToast('Import failed', 'error'); });
+        sendTeams(teams);
       };
       reader.readAsText(file);
+    }
+
+    function importFromExcel(file) {
+      if (typeof XLSX === 'undefined') { showToast('Excel parser not loaded', 'error'); return; }
+      var reader = new FileReader();
+      reader.onload = function (e) {
+        var wb = XLSX.read(e.target.result, { type: 'array' });
+        var ws = wb.Sheets[wb.SheetNames[0]];
+        var rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+        if (!rows.length) { showToast('Empty spreadsheet', 'error'); return; }
+
+        // Find which columns are team number and name
+        var header = rows[0].map(function (h) { return String(h).trim().toLowerCase(); });
+        var numCol  = header.findIndex(function (h) { return h.includes('number') || h === 'num' || h === '#'; });
+        var nameCol = header.findIndex(function (h) { return h.includes('name'); });
+
+        // Fallback: assume col 0 = number, col 1 = name if headers not found
+        if (numCol === -1) numCol  = 0;
+        if (nameCol === -1) nameCol = 1;
+
+        var teams = [];
+        var startRow = isNaN(parseInt(rows[0][numCol], 10)) ? 1 : 0;
+        for (var i = startRow; i < rows.length; i++) {
+          var num  = parseInt(rows[i][numCol], 10);
+          var name = String(rows[i][nameCol] || '').trim();
+          if (!isNaN(num) && num > 0 && name) teams.push({ number: num, name: name });
+        }
+        sendTeams(teams);
+      };
+      reader.readAsArrayBuffer(file);
     }
 
     // ════════════════════════════════════════════════════════════════════════════
@@ -360,14 +415,16 @@
     // RANKING POINTS TAB
     // ════════════════════════════════════════════════════════════════════════════
     var RP_FIELDS = [
-      ['rp_win',                 'RP: Win'],
-      ['rp_tie',                 'RP: Tie'],
-      ['rp_loss',                'RP: Loss'],
-      ['threshold_park_1',       'Park RP Threshold 1 (robots)'],
-      ['threshold_park_2',       'Park RP Threshold 2 (robots)'],
-      ['threshold_pattern',      'Pattern RP Threshold'],
-      ['threshold_balls',        'Ball RP Threshold'],
-      ['matches_per_team',       'Matches per Team'],
+      ['rp_win',                   'RP: Win'],
+      ['rp_tie',                   'RP: Tie'],
+      ['rp_loss',                  'RP: Loss'],
+      ['rp_park_threshold_1',      'Park RP Threshold 1 (+1 RP)'],
+      ['rp_park_threshold_2',      'Park RP Threshold 2 (+2 RP)'],
+      ['rp_pattern_threshold_1',   'Pattern RP Threshold 1 (+1 RP)'],
+      ['rp_pattern_threshold_2',   'Pattern RP Threshold 2 (+2 RP)'],
+      ['rp_ball_threshold_1',      'Ball RP Threshold 1 (+1 RP)'],
+      ['rp_ball_threshold_2',      'Ball RP Threshold 2 (+2 RP)'],
+      ['matches_per_team',         'Matches per Team'],
     ];
 
     var rpInputs = {};
@@ -462,6 +519,15 @@
     function renderPeriodsTable() {
       if (!periodsContainer) return;
       while (periodsContainer.firstChild) periodsContainer.removeChild(periodsContainer.firstChild);
+
+      var hdr = document.createElement('div');
+      hdr.className = 'period-header';
+      ['#', 'Name', 'Secs', 'Type', 'Group ID', 'Repeats', '', '', ''].forEach(function (label) {
+        var cell = document.createElement('span');
+        cell.textContent = label;
+        hdr.appendChild(cell);
+      });
+      periodsContainer.appendChild(hdr);
 
       gPeriods.forEach(function (period, idx) {
         var row = document.createElement('div');
@@ -840,7 +906,11 @@
           showToast('Type exactly "RESET" to confirm', 'error');
           return;
         }
-        fetch('/api/admin/reset', { method: 'POST' })
+        fetch('/api/admin/reset', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ confirm: 'RESET' }),
+        })
           .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
           .then(function () {
             showToast('System reset complete', 'success');

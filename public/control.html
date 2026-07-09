@@ -6,27 +6,317 @@
   <title>Match Controller — Score Keeper</title>
   <link rel="stylesheet" href="/css/style.css">
   <style>
-    .ctrl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; padding: 1rem; }
-    .ctrl-grid .full-width { grid-column: 1 / -1; }
-    .match-state-badge {
-      display: inline-block; padding: 0.3rem 0.8rem; border-radius: 6px;
-      font-weight: 700; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.05em;
+    /* ── Layout ──────────────────────────────────────────────────────────── */
+    .ctrl-layout {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      padding: 1rem;
+      max-width: 1100px;
+      margin: 0 auto;
     }
-    .state-upcoming  { background: var(--bg4); color: var(--text2); }
-    .state-queued    { background: var(--yellow-bg); color: var(--yellow); border: 1px solid var(--yellow); }
-    .state-on_field  { background: #002a00; color: var(--green); border: 1px solid var(--green); }
-    .state-completed { background: var(--bg3); color: var(--text2); border: 1px solid var(--border); }
-    .timer-compact { font-size: 4rem; font-weight: 900; text-align: center; color: var(--timer-normal); }
-    .score-summary { display: flex; gap: 2rem; justify-content: center; align-items: center; }
+
+    /* ── Pipeline ─────────────────────────────────────────────────────────── */
+    .pipeline-row {
+      display: grid;
+      grid-template-columns: 5.5rem 1fr auto auto;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.65rem 0.85rem;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 0.4rem;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .pipeline-row:last-child { margin-bottom: 0; }
+    .pipeline-row.state-on-field  { border-color: var(--green);  background: #001a00; }
+    .pipeline-row.state-queued    { border-color: var(--yellow); background: var(--yellow-bg); }
+    .pipeline-row.is-loaded       { outline: 2px solid var(--blue); outline-offset: 1px; }
+
+    .pipeline-match-num {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--text2);
+      white-space: nowrap;
+    }
+    .pipeline-match-num .match-number-val {
+      display: block;
+      font-size: 1rem;
+      color: var(--text);
+    }
+
+    .pipeline-teams {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+    }
+    .pipeline-team {
+      font-size: 1.05rem;
+      font-weight: 800;
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+    }
+    .pipeline-team.red  { color: var(--red-light);  background: var(--red-bg);  border: 1px solid var(--red-border); }
+    .pipeline-team.blue { color: var(--blue-light); background: var(--blue-bg); border: 1px solid var(--blue-border); }
+    .pipeline-vs {
+      font-size: 0.75rem;
+      color: var(--text2);
+      font-weight: 600;
+      padding: 0 0.1rem;
+    }
+
+    .pipeline-state-badge {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+    .badge-upcoming  { background: var(--bg4); color: var(--text2); }
+    .badge-queued    { background: var(--yellow-bg); color: var(--yellow); border: 1px solid var(--yellow); }
+    .badge-on-field  { background: #002a00; color: var(--green); border: 1px solid var(--green); }
+    .badge-loaded    { background: var(--blue-bg); color: var(--blue-light); border: 1px solid var(--blue-border); margin-left: 0.35rem; }
+
+    .pipeline-badges { display: flex; align-items: center; gap: 0; flex-wrap: nowrap; }
+
+    .pipeline-actions {
+      display: flex;
+      gap: 0.4rem;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .pipeline-btn {
+      font-size: 0.8rem;
+      font-weight: 700;
+      padding: 0.35rem 0.75rem;
+      border-radius: 6px;
+      white-space: nowrap;
+    }
+    .pipeline-btn.call-queue { background: var(--yellow-bg); color: var(--yellow); border: 1px solid var(--yellow); }
+    .pipeline-btn.call-queue:hover { background: #2a2400; }
+    .pipeline-btn.set-field  { background: #002a00; color: var(--green); border: 1px solid var(--green); }
+    .pipeline-btn.set-field:hover  { background: #003a00; }
+    .pipeline-btn.load-match { background: var(--blue); color: #fff; border: 1px solid var(--blue-border); }
+    .pipeline-btn.load-match:hover { background: #0055ee; }
+    .pipeline-btn.save-match { background: var(--green); color: #000; }
+    .pipeline-btn.save-match:hover { background: #00dd44; }
+    .pipeline-btn.redo-match { background: var(--yellow-bg); color: var(--yellow); border: 1px solid var(--yellow); }
+    .pipeline-btn.redo-match:hover { background: #2a2400; }
+
+    /* ── Motif section ────────────────────────────────────────────────────── */
+    .motif-card-inner {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+    }
+    .motif-pattern {
+      display: flex;
+      gap: 0.6rem;
+      align-items: center;
+    }
+    .motif-dot {
+      width: 3rem;
+      height: 3rem;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .motif-dot.G { background: #00cc44; box-shadow: 0 0 10px #00cc4488; }
+    .motif-dot.P { background: #9933ff; box-shadow: 0 0 10px #9933ff88; }
+    .motif-actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+    .btn-randomize {
+      font-size: 0.85rem; font-weight: 700;
+      padding: 0.5rem 1rem;
+      background: var(--blue); color: #fff;
+      border-radius: 6px; border: none;
+      transition: background 0.15s, box-shadow 0.15s;
+    }
+    .btn-randomize:hover { background: #0055ee; }
+    @keyframes motif-warn-pulse {
+      0%   { background: var(--red-light); box-shadow: 0 0 0 0 rgba(255,80,80,0.7); }
+      50%  { background: #ff3333;          box-shadow: 0 0 0 8px rgba(255,80,80,0); }
+      100% { background: var(--red-light); box-shadow: 0 0 0 0 rgba(255,80,80,0); }
+    }
+    .btn-randomize.motif-warn {
+      animation: motif-warn-pulse 0.6s ease 3;
+      color: #fff;
+    }
+    .motif-manual { display: flex; gap: 0.4rem; }
+    .btn-motif-pick {
+      display: flex;
+      gap: 0.3rem;
+      align-items: center;
+      padding: 0.4rem 0.65rem;
+      border-radius: 6px;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+    }
+    .btn-motif-pick:hover { border-color: var(--blue-light); }
+    .btn-motif-pick.active { border-color: var(--blue-light); background: var(--blue-bg); }
+    .btn-motif-pick .mini-dot {
+      width: 0.75rem;
+      height: 0.75rem;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .btn-motif-pick .mini-dot.G { background: #00cc44; }
+    .btn-motif-pick .mini-dot.P { background: #9933ff; }
+    .motif-none-msg { color: var(--text2); font-size: 0.9rem; font-style: italic; }
+
+    /* ── Timer section ────────────────────────────────────────────────────── */
+    .timer-card {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 1rem;
+      align-items: start;
+    }
+    .timer-display-wrap { text-align: center; }
+    .timer-btns {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      min-width: 130px;
+    }
+    .timer-btns button {
+      font-size: 0.9rem;
+      font-weight: 700;
+      padding: 0.55rem 1rem;
+      border-radius: 6px;
+    }
+    .btn-start   { background: var(--green);  color: #000; }
+    .btn-start:hover { background: #00dd44; }
+    .btn-pause   { background: var(--yellow-bg); color: var(--yellow); border: 1px solid var(--yellow); }
+    .btn-resume  { background: #002a00; color: var(--green); border: 1px solid var(--green); }
+    .btn-advance { background: var(--bg3); color: var(--text2); border: 1px solid var(--border); }
+    .btn-abort   { background: var(--red-bg); color: var(--red-light); border: 1px solid var(--red-border); }
+    .timer-btns button:disabled {
+      background: var(--bg3) !important;
+      color: var(--text2) !important;
+      border-color: var(--border) !important;
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    /* ── Score section ────────────────────────────────────────────────────── */
+    .score-summary {
+      display: flex;
+      gap: 2rem;
+      justify-content: center;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
     .score-alloc { text-align: center; }
-    .score-alloc .total { font-size: 3rem; font-weight: 900; }
-    .score-alloc .label { font-size: 0.8rem; color: var(--text2); text-transform: uppercase; }
-    .breakdown-row { display: flex; justify-content: space-between; font-size: 0.9rem; padding: 0.2rem 0; border-bottom: 1px solid var(--bg3); }
+    .score-alloc .total { font-size: 3.5rem; font-weight: 900; line-height: 1; }
+    .score-alloc .label { font-size: 0.75rem; color: var(--text2); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 0.2rem; }
+    .breakdown-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.85rem;
+      padding: 0.2rem 0;
+      border-bottom: 1px solid var(--bg3);
+    }
     .breakdown-row:last-child { border-bottom: none; }
     .breakdown-label { color: var(--text2); }
-    .btn-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
-    .loaded-match-name { font-size: 0.9rem; color: var(--text2); margin-top: 0.5rem; }
-    .status-row { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem; }
+
+    /* ── Loaded match label ───────────────────────────────────────────────── */
+    .loaded-label {
+      font-size: 0.8rem;
+      color: var(--blue-light);
+      font-weight: 600;
+      margin-top: 0.25rem;
+      min-height: 1.2em;
+    }
+
+    /* ── Pattern balls (Live Scores card) ────────────────────────────────── */
+    .pattern-section {
+      margin-top: 0.75rem;
+      margin-bottom: 0.25rem;
+    }
+    .pattern-heading {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text2);
+      margin-bottom: 0.5rem;
+    }
+    .pattern-alliances {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+    .pattern-col-label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 0.35rem;
+    }
+    .pattern-col-label.red-text  { color: var(--red-light); }
+    .pattern-col-label.blue-text { color: var(--blue-light); }
+    .ctrl-pattern-balls {
+      display: grid;
+      grid-template-columns: repeat(9, 1fr);
+      gap: 0.3rem;
+    }
+    .ctrl-pattern-ball {
+      aspect-ratio: 1;
+      width: 100%;
+      border-radius: 50%;
+      border: 2px solid;
+      opacity: 0.25;
+      transition: opacity 0.15s;
+    }
+    .ctrl-pattern-ball.selected { opacity: 1; }
+
+    /* ── Post-match ───────────────────────────────────────────────────────── */
+    .commit-card { border-color: var(--green); }
+    .commit-card button {
+      width: 100%;
+      padding: 0.9rem;
+      font-size: 1rem;
+      font-weight: 700;
+      background: var(--green);
+      color: #000;
+      border-radius: 8px;
+    }
+    .commit-card button:hover { background: #00dd44; }
+
+    /* ── Next-match popup ─────────────────────────────────────────────────── */
+    .nmatch-backdrop {
+      display: none;
+      position: fixed; inset: 0; z-index: 200;
+      background: rgba(0,0,0,0.72);
+      align-items: center; justify-content: center;
+    }
+    .nmatch-backdrop.open { display: flex; }
+    .nmatch-modal {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 14px; padding: 2rem 1.75rem;
+      min-width: 320px; max-width: 440px; width: 90%;
+      display: flex; flex-direction: column; gap: 1rem;
+    }
+    .nmatch-title { font-size: 1.1rem; font-weight: 700; color: var(--text1); }
+    .nmatch-sub   { font-size: 0.85rem; color: var(--text2); line-height: 1.5; margin-bottom: 0.25rem; }
+    .nmatch-btn {
+      width: 100%; padding: 0.85rem 1rem; border-radius: 8px;
+      font-size: 0.95rem; font-weight: 700; cursor: pointer; border: none;
+      text-align: left;
+    }
+    .nmatch-btn .btn-desc {
+      display: block; font-size: 0.78rem; font-weight: 400; opacity: 0.75; margin-top: 0.2rem;
+    }
+    .nmatch-btn.save   { background: var(--green); color: #000; }
+    .nmatch-btn.save:hover { background: #00dd44; }
+    .nmatch-btn.redo   { background: var(--yellow-bg); color: var(--yellow); border: 1px solid var(--yellow); }
+    .nmatch-btn.redo:hover { background: #2a2400; }
+    .nmatch-btn.cancel { background: transparent; color: var(--text2); border: 1px solid var(--border); text-align: center; }
+    .nmatch-btn.cancel:hover { background: var(--bg3); }
   </style>
 </head>
 <body>
@@ -35,7 +325,7 @@
     <span class="page-title">Match Controller</span>
   </header>
 
-  <div class="ctrl-grid" id="main-grid"></div>
+  <div class="ctrl-layout" id="ctrl-layout"></div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="/js/common.js"></script>
@@ -44,133 +334,212 @@
     'use strict';
 
     // ── State ──────────────────────────────────────────────────────────────────
+    var MOTIFS = ['GPP', 'PGP', 'PPG'];
+
+    // Ball colours derived from match motif (G = green, P = purple)
+    var BALL_G    = { bg: '#00cc44', bd: '#00cc44' };
+    var BALL_P    = { bg: '#9933ff', bd: '#9933ff' };
+    var BALL_NONE = { bg: '#445566', bd: '#445566' };
+
+    function getBallColor(idx, motif) {
+      if (!motif || motif.length !== 3) return BALL_NONE;
+      var ch = motif[idx % 3];
+      return ch === 'G' ? BALL_G : ch === 'P' ? BALL_P : BALL_NONE;
+    }
+
     var state = {
       matches: [],
-      loadedMatch: null,
+      loadedMatchId: null,
       timerState: null,
-      scores: { red: {}, blue: {} },
       matchEnded: false,
+      currentMotif: null,
+      motifLocked: false,
+      redPatternBalls: '000000000',
+      bluePatternBalls: '000000000',
     };
 
     // ── Auth ───────────────────────────────────────────────────────────────────
     SK.mountPinPad('control', 'Match Controller').then(function () {
       SK.addLogoutButton(document.getElementById('page-header'));
-      init();
+      buildLayout();
+      fetchAll();
+      connectSocket();
     });
 
-    // ── DOM references ─────────────────────────────────────────────────────────
-    var grid; // main grid element
-    // Section elements
-    var matchSelect, loadedMatchName, matchStateBadge;
-    var queueBtn, onFieldBtn;
-    var periodLabelEl, timerEl, startBtn, pauseBtn, resumeBtn, abortBtn, advanceBtn;
-    var redTotal, blueTotal;
-    var redBreakdown, blueBreakdown;
-    var commitSection;
+    // ── DOM refs ───────────────────────────────────────────────────────────────
+    var layout;
+    var pipelineList;
+    var motifPatternEl, motifPickBtns;
+    var periodLabelEl, timerEl, loadedLabel;
+    var startBtn, pauseBtn, resumeBtn, abortBtn, advanceBtn;
+    var redTotal, blueTotal, redBreakdown, blueBreakdown;
+    var redRpPanel, blueRpPanel;
+    var redPatternRow, bluePatternRow;   // 9-element NodeLists filled at build time
+    var commitCard;
 
-    function init() {
-      grid = document.getElementById('main-grid');
-      buildSections();
-      fetchMatches();
-      fetchTimerState();
-      connectSocketEvents();
+    // ── Next-match popup ───────────────────────────────────────────────────────
+    var pendingLoadMatchId = null;
+    var nmatchBackdrop = document.getElementById('nmatch-backdrop');
+    var nmatchTitle    = document.getElementById('nmatch-title');
+    var nmatchSub      = document.getElementById('nmatch-sub');
+
+    function openNmatchPopup(currentMatchId, nextMatchId) {
+      pendingLoadMatchId = nextMatchId;
+      var cur = state.matches.find(function (m) { return m.id === currentMatchId; });
+      nmatchTitle.textContent = 'Loading Match ' + (cur ? cur.match_number : '') + ' — what happens to the current match?';
+      nmatchBackdrop.classList.add('open');
+    }
+    function closeNmatchPopup() {
+      nmatchBackdrop.classList.remove('open');
+      pendingLoadMatchId = null;
     }
 
-    // ── Build UI sections ──────────────────────────────────────────────────────
-    function buildSections() {
-      // A. Match Selector
-      var sectionA = makeCard('Match Selector', true);
-      var selectRow = document.createElement('div');
-      selectRow.className = 'field-row';
-      matchSelect = document.createElement('select');
-      matchSelect.style.flex = '1';
-      var placeholder = document.createElement('option');
-      placeholder.textContent = 'Loading matches...';
-      placeholder.value = '';
-      matchSelect.appendChild(placeholder);
-      var loadBtn = document.createElement('button');
-      loadBtn.className = 'control-btn';
-      loadBtn.textContent = 'Load Match';
-      loadBtn.addEventListener('click', loadMatch);
-      selectRow.appendChild(matchSelect);
-      selectRow.appendChild(loadBtn);
-      sectionA.appendChild(selectRow);
+    document.getElementById('nmatch-save').addEventListener('click', function () {
+      var curId = state.loadedMatchId;
+      var nextId = pendingLoadMatchId;
+      closeNmatchPopup();
+      fetch('/api/matches/' + curId + '/commit', { method: 'POST' })
+        .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+        .then(function () {
+          showToast('Match saved', 'success');
+          doLoadMatch(nextId);
+        })
+        .catch(function () { showToast('Failed to save match', 'error'); });
+    });
 
-      loadedMatchName = document.createElement('div');
-      loadedMatchName.className = 'loaded-match-name';
-      loadedMatchName.textContent = 'No match loaded';
-      sectionA.appendChild(loadedMatchName);
+    document.getElementById('nmatch-redo').addEventListener('click', function () {
+      var curId = state.loadedMatchId;
+      var nextId = pendingLoadMatchId;
+      closeNmatchPopup();
+      fetch('/api/matches/' + curId + '/replay', { method: 'POST' })
+        .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+        .then(function () {
+          showToast('Match marked as redo — scores reset', 'success');
+          doLoadMatch(nextId);
+        })
+        .catch(function () { showToast('Failed to reset match', 'error'); });
+    });
 
-      // B. Queue Control
-      var sectionB = makeCard('Queue Control', false);
-      var statusRow = document.createElement('div');
-      statusRow.className = 'status-row';
-      var stateLabel = document.createElement('span');
-      stateLabel.style.color = 'var(--text2)';
-      stateLabel.style.fontSize = '0.9rem';
-      stateLabel.textContent = 'State:';
-      matchStateBadge = document.createElement('span');
-      matchStateBadge.className = 'match-state-badge state-upcoming';
-      matchStateBadge.textContent = 'UPCOMING';
-      statusRow.appendChild(stateLabel);
-      statusRow.appendChild(matchStateBadge);
-      sectionB.appendChild(statusRow);
+    document.getElementById('nmatch-cancel').addEventListener('click', closeNmatchPopup);
+    nmatchBackdrop.addEventListener('click', function (e) {
+      if (e.target === nmatchBackdrop) closeNmatchPopup();
+    });
 
-      var queueBtns = document.createElement('div');
-      queueBtns.className = 'btn-row';
-      queueBtn = document.createElement('button');
-      queueBtn.className = 'control-btn';
-      queueBtn.textContent = 'Call to Queue';
-      queueBtn.addEventListener('click', function () { setMatchState('QUEUED'); });
-      onFieldBtn = document.createElement('button');
-      onFieldBtn.className = 'control-btn';
-      onFieldBtn.textContent = 'Set On Field';
-      onFieldBtn.addEventListener('click', function () { setMatchState('ON_FIELD'); });
-      queueBtns.appendChild(queueBtn);
-      queueBtns.appendChild(onFieldBtn);
-      sectionB.appendChild(queueBtns);
+    // ── Build full layout ──────────────────────────────────────────────────────
+    function buildLayout() {
+      layout = document.getElementById('ctrl-layout');
 
-      // C. Timer
-      var sectionC = makeCard('Timer', true);
+      // 1. Match Pipeline card
+      var pipelineCard = makeCard('Match Pipeline');
+      pipelineList = document.createElement('div');
+      pipelineList.id = 'pipeline-list';
+      pipelineCard.appendChild(pipelineList);
+      layout.appendChild(pipelineCard);
+
+      // 2. Motif card
+      var motifCard = makeCard('Match Motif');
+      // Add a lock badge to the card header
+      var motifCardH2 = motifCard.querySelector('h2');
+      var lockTag = document.createElement('span');
+      lockTag.id = 'motif-lock-tag';
+      lockTag.textContent = 'Locked — match in progress';
+      lockTag.style.cssText = 'display:none;font-size:0.7rem;font-weight:600;color:var(--red-light);background:var(--red-bg);border:1px solid var(--red-border);border-radius:4px;padding:0.15rem 0.5rem;margin-left:0.75rem;vertical-align:middle;';
+      motifCardH2.appendChild(lockTag);
+
+      var motifInner = document.createElement('div');
+      motifInner.className = 'motif-card-inner';
+
+      // 3 colored balls
+      motifPatternEl = document.createElement('div');
+      motifPatternEl.className = 'motif-pattern';
+
+      // Actions
+      var motifActionsEl = document.createElement('div');
+      motifActionsEl.className = 'motif-actions';
+
+      var randomizeBtn = document.createElement('button');
+      randomizeBtn.className = 'btn-randomize';
+      randomizeBtn.textContent = 'Randomize';
+      randomizeBtn.addEventListener('click', randomizeMotif);
+      motifActionsEl.appendChild(randomizeBtn);
+
+      var manualEl = document.createElement('div');
+      manualEl.className = 'motif-manual';
+      motifPickBtns = {};
+      MOTIFS.forEach(function (m) {
+        var btn = document.createElement('button');
+        btn.className = 'btn-motif-pick';
+        // Show 3 mini colored dots instead of text
+        m.split('').forEach(function (ch) {
+          var d = document.createElement('span');
+          d.className = 'mini-dot ' + ch;
+          btn.appendChild(d);
+        });
+        btn.addEventListener('click', function () { setMotif(m); });
+        motifPickBtns[m] = btn;
+        manualEl.appendChild(btn);
+      });
+      motifActionsEl.appendChild(manualEl);
+
+      motifInner.appendChild(motifPatternEl);
+      motifInner.appendChild(motifActionsEl);
+      motifCard.appendChild(motifInner);
+      layout.appendChild(motifCard);
+      renderMotif(null); // show empty state
+
+      // 3. Timer card
+      var timerCard = makeCard('Timer');
+      var timerInner = document.createElement('div');
+      timerInner.className = 'timer-card';
+
+      var timerLeft = document.createElement('div');
+      timerLeft.className = 'timer-display-wrap';
       periodLabelEl = document.createElement('div');
       periodLabelEl.className = 'period-label';
       periodLabelEl.textContent = 'Waiting';
       timerEl = document.createElement('div');
       timerEl.className = 'timer-display';
-      timerEl.style.fontSize = '4rem';
       timerEl.textContent = '0:00';
-      sectionC.appendChild(periodLabelEl);
-      sectionC.appendChild(timerEl);
+      loadedLabel = document.createElement('div');
+      loadedLabel.className = 'loaded-label';
+      timerLeft.appendChild(periodLabelEl);
+      timerLeft.appendChild(timerEl);
+      timerLeft.appendChild(loadedLabel);
 
-      var timerBtns = document.createElement('div');
-      timerBtns.className = 'btn-row mt-2';
-      startBtn   = makeTimerBtn('Start',   'start',   handleStart);
-      pauseBtn   = makeTimerBtn('Pause',   'pause',   handlePause);
-      resumeBtn  = makeTimerBtn('Resume',  'resume',  handleResume);
-      abortBtn   = makeTimerBtn('Abort',   'abort',   handleAbort);
-      advanceBtn = makeTimerBtn('Advance Period', 'advance', handleAdvance);
-      timerBtns.appendChild(startBtn);
-      timerBtns.appendChild(pauseBtn);
-      timerBtns.appendChild(resumeBtn);
-      timerBtns.appendChild(abortBtn);
-      timerBtns.appendChild(advanceBtn);
-      sectionC.appendChild(timerBtns);
+      var timerBtnsEl = document.createElement('div');
+      timerBtnsEl.className = 'timer-btns';
+      startBtn   = makeTBtn('Start',          'btn-start',   handleStart);
+      pauseBtn   = makeTBtn('Pause',          'btn-pause',   handlePause);
+      resumeBtn  = makeTBtn('Resume',         'btn-resume',  handleResume);
+      advanceBtn = makeTBtn('Advance Period', 'btn-advance', handleAdvance);
+      abortBtn   = makeTBtn('Abort',          'btn-abort',   handleAbort);
+      timerBtnsEl.appendChild(startBtn);
+      timerBtnsEl.appendChild(pauseBtn);
+      timerBtnsEl.appendChild(resumeBtn);
+      timerBtnsEl.appendChild(advanceBtn);
+      timerBtnsEl.appendChild(abortBtn);
 
-      // D. Live Scores
-      var sectionD = makeCard('Live Scores', true);
-      var scoresSummary = document.createElement('div');
-      scoresSummary.className = 'score-summary mb-2';
+      timerInner.appendChild(timerLeft);
+      timerInner.appendChild(timerBtnsEl);
+      timerCard.appendChild(timerInner);
+      layout.appendChild(timerCard);
+
+      // 3. Live Scores card
+      var scoresCard = makeCard('Live Scores');
+
+      var scoreSummary = document.createElement('div');
+      scoreSummary.className = 'score-summary';
 
       var redAlloc = document.createElement('div');
       redAlloc.className = 'score-alloc';
       redTotal = document.createElement('div');
       redTotal.className = 'total red-text';
       redTotal.textContent = '0';
-      var redLabel = document.createElement('div');
-      redLabel.className = 'label';
-      redLabel.textContent = 'RED';
+      var redLbl = document.createElement('div');
+      redLbl.className = 'label';
+      redLbl.textContent = 'RED';
       redAlloc.appendChild(redTotal);
-      redAlloc.appendChild(redLabel);
+      redAlloc.appendChild(redLbl);
 
       var vsEl = document.createElement('div');
       vsEl.className = 'vs-divider';
@@ -181,70 +550,212 @@
       blueTotal = document.createElement('div');
       blueTotal.className = 'total blue-text';
       blueTotal.textContent = '0';
-      var blueLabel = document.createElement('div');
-      blueLabel.className = 'label';
-      blueLabel.textContent = 'BLUE';
+      var blueLbl = document.createElement('div');
+      blueLbl.className = 'label';
+      blueLbl.textContent = 'BLUE';
       blueAlloc.appendChild(blueTotal);
-      blueAlloc.appendChild(blueLabel);
+      blueAlloc.appendChild(blueLbl);
 
-      scoresSummary.appendChild(redAlloc);
-      scoresSummary.appendChild(vsEl);
-      scoresSummary.appendChild(blueAlloc);
-      sectionD.appendChild(scoresSummary);
+      scoreSummary.appendChild(redAlloc);
+      scoreSummary.appendChild(vsEl);
+      scoreSummary.appendChild(blueAlloc);
+      scoresCard.appendChild(scoreSummary);
 
-      var breakdownGrid = document.createElement('div');
-      breakdownGrid.className = 'grid-2';
-      redBreakdown = document.createElement('div');
+      // Pattern balls section
+      var patternSection = document.createElement('div');
+      patternSection.className = 'pattern-section';
+      var patternHeading = document.createElement('div');
+      patternHeading.className = 'pattern-heading';
+      patternHeading.textContent = 'Pattern Balls';
+      patternSection.appendChild(patternHeading);
+      var patternAlliances = document.createElement('div');
+      patternAlliances.className = 'pattern-alliances';
+
+      function makePatternCol(colorCls) {
+        var col = document.createElement('div');
+        var colLbl = document.createElement('div');
+        colLbl.className = 'pattern-col-label ' + colorCls + '-text';
+        colLbl.textContent = colorCls.toUpperCase();
+        col.appendChild(colLbl);
+        var row = document.createElement('div');
+        row.className = 'ctrl-pattern-balls';
+        for (var bi = 0; bi < 9; bi++) {
+          var ball = document.createElement('div');
+          ball.className = 'ctrl-pattern-ball';
+          var c = getBallColor(bi, state.currentMotif);
+          ball.style.background  = c.bg;
+          ball.style.borderColor = c.bd;
+          row.appendChild(ball);
+        }
+        col.appendChild(row);
+        return { col: col, ballRow: row };
+      }
+
+      var redCol  = makePatternCol('red');
+      var blueCol = makePatternCol('blue');
+      redPatternRow  = redCol.ballRow;
+      bluePatternRow = blueCol.ballRow;
+      patternAlliances.appendChild(redCol.col);
+      patternAlliances.appendChild(blueCol.col);
+      patternSection.appendChild(patternAlliances);
+      scoresCard.appendChild(patternSection);
+
+      var rpGrid = document.createElement('div');
+      rpGrid.className = 'grid-2';
+      redRpPanel  = document.createElement('div');
+      blueRpPanel = document.createElement('div');
+      redRpPanel.className  = 'card red-panel';
+      blueRpPanel.className = 'card blue-panel';
+      rpGrid.appendChild(redRpPanel);
+      rpGrid.appendChild(blueRpPanel);
+      scoresCard.appendChild(rpGrid);
+
+      var bdGrid = document.createElement('div');
+      bdGrid.className = 'grid-2';
+      redBreakdown  = document.createElement('div');
       blueBreakdown = document.createElement('div');
-      redBreakdown.className = 'card red-panel';
+      redBreakdown.className  = 'card red-panel';
       blueBreakdown.className = 'card blue-panel';
-      breakdownGrid.appendChild(redBreakdown);
-      breakdownGrid.appendChild(blueBreakdown);
-      sectionD.appendChild(breakdownGrid);
+      bdGrid.appendChild(redBreakdown);
+      bdGrid.appendChild(blueBreakdown);
+      scoresCard.appendChild(bdGrid);
+      layout.appendChild(scoresCard);
 
-      // E. Post-match commit
-      commitSection = makeCard('Post-Match', false);
-      commitSection.classList.add('hidden');
+      // 4. Post-match commit card
+      commitCard = makeCard('Post-Match');
+      commitCard.className += ' commit-card hidden';
       var commitBtn = document.createElement('button');
-      commitBtn.className = 'control-btn commit w-full';
-      commitBtn.textContent = 'Commit Scores';
+      commitBtn.textContent = 'Commit Scores & Save Results';
       commitBtn.addEventListener('click', commitScores);
-      commitSection.appendChild(commitBtn);
-
-      // Append all sections
-      grid.appendChild(sectionA);
-      grid.appendChild(sectionB);
-      grid.appendChild(sectionC);
-      grid.appendChild(sectionD);
-      grid.appendChild(commitSection);
+      commitCard.appendChild(commitBtn);
+      layout.appendChild(commitCard);
     }
 
-    function makeCard(title, fullWidth) {
+    function makeCard(title) {
       var card = document.createElement('div');
-      card.className = 'card' + (fullWidth ? ' full-width' : '');
+      card.className = 'card';
       var h2 = document.createElement('h2');
       h2.textContent = title;
       card.appendChild(h2);
       return card;
     }
 
-    function makeTimerBtn(label, cls, handler) {
+    function makeTBtn(label, cls, handler) {
       var btn = document.createElement('button');
-      btn.className = 'control-btn ' + cls;
+      btn.className = cls;
       btn.textContent = label;
       btn.addEventListener('click', handler);
       return btn;
     }
 
     // ── Fetch helpers ──────────────────────────────────────────────────────────
+    function fetchAll() {
+      fetchMatches();
+      fetchTimerState();
+    }
+
     function fetchMatches() {
       fetch('/api/matches')
         .then(function (r) { return r.json(); })
         .then(function (matches) {
           state.matches = matches;
-          populateMatchSelect(matches);
+          renderPipeline();
         })
         .catch(function () { showToast('Failed to load matches', 'error'); });
+    }
+
+    // ── Motif ──────────────────────────────────────────────────────────────────
+    function renderMotif(motif) {
+      state.currentMotif = motif;
+      applyMotifToPatternBalls(motif);
+
+      MOTIFS.forEach(function (m) {
+        if (motifPickBtns[m]) motifPickBtns[m].classList.toggle('active', m === motif);
+      });
+
+      while (motifPatternEl.firstChild) motifPatternEl.removeChild(motifPatternEl.firstChild);
+
+      if (!motif) {
+        var msg = document.createElement('span');
+        msg.className = 'motif-none-msg';
+        msg.textContent = 'Not set — randomize before match start';
+        motifPatternEl.appendChild(msg);
+        return;
+      }
+
+      // 3 colored balls
+      motif.split('').forEach(function (ch) {
+        var dot = document.createElement('div');
+        dot.className = 'motif-dot ' + ch;
+        motifPatternEl.appendChild(dot);
+      });
+    }
+
+    function applyMotifToPatternBalls(motif) {
+      var balls = document.querySelectorAll('.ctrl-pattern-ball');
+      for (var i = 0; i < balls.length; i++) {
+        var c = getBallColor(i % 9, motif);
+        balls[i].style.background  = c.bg;
+        balls[i].style.borderColor = c.bd;
+      }
+    }
+
+    function setMotifLocked(locked) {
+      state.motifLocked = locked;
+      var randomizeBtns = document.querySelectorAll('.btn-randomize');
+      randomizeBtns.forEach(function (b) { b.disabled = locked; });
+      MOTIFS.forEach(function (m) {
+        if (motifPickBtns[m]) motifPickBtns[m].disabled = locked;
+      });
+      var lockTag = document.getElementById('motif-lock-tag');
+      if (lockTag) lockTag.style.display = locked ? 'inline-block' : 'none';
+    }
+
+    function updateTimerButtons(ts) {
+      if (!startBtn) return;
+      var running = !!(ts && ts.running);
+      var paused  = !!(ts && ts.paused);
+      var matchId = !!(ts && ts.matchId);
+      var ended   = !!(ts && ts.matchEnded) || state.matchEnded;
+
+      // Start: only when a match is loaded and hasn't started or ended yet
+      startBtn.disabled  = !matchId || running || ended;
+      // Pause: only when actively running
+      pauseBtn.disabled  = !running || paused;
+      // Resume: only when paused
+      resumeBtn.disabled = !paused;
+      // Advance/Abort: when a match is in progress (started but not ended)
+      var inProgress = matchId && (running || paused) && !ended;
+      advanceBtn.disabled = !inProgress;
+      abortBtn.disabled   = !inProgress;
+    }
+
+    function randomizeMotif() {
+      if (!state.loadedMatchId) { showToast('Load a match first', 'error'); return; }
+      if (state.motifLocked)    { showToast('Match in progress — motif is locked', 'error'); return; }
+      fetch('/api/matches/' + state.loadedMatchId + '/motif/randomize', { method: 'POST' })
+        .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+        .then(function (data) {
+          renderMotif(data.motif);
+          showToast('Motif: ' + data.motif, 'success');
+        })
+        .catch(function () { showToast('Failed to randomize motif', 'error'); });
+    }
+
+    function setMotif(motif) {
+      if (!state.loadedMatchId) { showToast('Load a match first', 'error'); return; }
+      if (state.motifLocked)    { showToast('Match in progress — motif is locked', 'error'); return; }
+      fetch('/api/matches/' + state.loadedMatchId + '/motif', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ motif: motif }),
+      })
+        .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+        .then(function (data) {
+          renderMotif(data.motif);
+          showToast('Motif set: ' + data.motif, 'success');
+        })
+        .catch(function () { showToast('Failed to set motif', 'error'); });
     }
 
     function fetchTimerState() {
@@ -252,10 +763,19 @@
         .then(function (r) { return r.json(); })
         .then(function (ts) {
           state.timerState = ts;
+          if (ts.matchEnded) state.matchEnded = true;
           SK.applyTimerState(ts, timerEl, periodLabelEl);
+          updateTimerButtons(ts);
           if (ts.matchId) {
+            state.loadedMatchId = ts.matchId;
+            updateLoadedLabel(ts.matchId);
             fetchScores(ts.matchId);
-            updateLoadedMatchDisplay(ts.matchId);
+            // Restore motif from loaded match
+            fetch('/api/matches/' + ts.matchId)
+              .then(function (r) { return r.json(); })
+              .then(function (m) { renderMotif(m.motif || null); })
+              .catch(function () {});
+            renderPipeline();
           }
         })
         .catch(function () {});
@@ -264,89 +784,222 @@
     function fetchScores(matchId) {
       fetch('/api/matches/' + matchId + '/scores')
         .then(function (r) { return r.json(); })
-        .then(function (data) {
-          updateScoreDisplay(data);
-        })
+        .then(function (data) { renderScores(data); })
         .catch(function () {});
     }
 
-    // ── Match selector ─────────────────────────────────────────────────────────
-    function populateMatchSelect(matches) {
-      while (matchSelect.firstChild) matchSelect.removeChild(matchSelect.firstChild);
-      var ph = document.createElement('option');
-      ph.value = '';
-      ph.textContent = matches.length ? '-- Select Match --' : '(No matches)';
-      matchSelect.appendChild(ph);
-      matches.forEach(function (m) {
-        var opt = document.createElement('option');
-        opt.value = m.id;
-        var rn = function(t) { return t ? t.number : '?'; };
-        var teams = 'R:' + rn(m.red1_team) + '/' + rn(m.red2_team) + ' vs B:' + rn(m.blue1_team) + '/' + rn(m.blue2_team);
-        opt.textContent = 'Match ' + m.match_number + ' — ' + teams + ' [' + m.state + ']';
-        matchSelect.appendChild(opt);
+    // ── Pipeline ───────────────────────────────────────────────────────────────
+    function renderPipeline() {
+      if (!pipelineList) return;
+      while (pipelineList.firstChild) pipelineList.removeChild(pipelineList.firstChild);
+
+      var pipeline = state.matches
+        .filter(function (m) { return m.state !== 'COMPLETED'; })
+        .slice(0, 5);
+
+      if (!pipeline.length) {
+        var msg = document.createElement('div');
+        msg.style.cssText = 'color:var(--text2);font-size:0.9rem;padding:0.5rem 0;';
+        msg.textContent = 'No upcoming matches.';
+        pipelineList.appendChild(msg);
+        return;
+      }
+
+      pipeline.forEach(function (m) {
+        pipelineList.appendChild(makePipelineRow(m));
       });
     }
 
-    function loadMatch() {
-      var id = matchSelect.value;
-      if (!id) { showToast('Select a match first', 'error'); return; }
-      fetch('/api/matches/' + id + '/load', { method: 'POST' })
-        .then(function (r) {
-          if (!r.ok) throw new Error('Failed');
-          return r.json();
-        })
-        .then(function () {
-          showToast('Match loaded', 'success');
-          updateLoadedMatchDisplay(parseInt(id, 10));
-        })
-        .catch(function () { showToast('Failed to load match', 'error'); });
-    }
+    function makePipelineRow(m) {
+      var stateKey = (m.state || 'UPCOMING').toLowerCase().replace('_', '-');
+      var isLoaded = state.loadedMatchId && state.loadedMatchId === m.id;
 
-    function updateLoadedMatchDisplay(matchId) {
-      state.loadedMatch = matchId;
-      var m = state.matches.find(function (x) { return x.id === matchId; });
-      if (m) {
-        var rn = function(t) { return t ? t.number : '?'; };
-        loadedMatchName.textContent = 'Loaded: Match ' + m.match_number +
-          ' — R:' + rn(m.red1_team) + '/' + rn(m.red2_team) +
-          ' vs B:' + rn(m.blue1_team) + '/' + rn(m.blue2_team);
-        updateMatchStateBadge(m.state);
+      var row = document.createElement('div');
+      row.className = 'pipeline-row state-' + stateKey + (isLoaded ? ' is-loaded' : '');
+
+      // Column 1: match number
+      var numCol = document.createElement('div');
+      numCol.className = 'pipeline-match-num';
+      var numLabel = document.createElement('span');
+      numLabel.textContent = 'Match';
+      var numVal = document.createElement('span');
+      numVal.className = 'match-number-val';
+      numVal.textContent = m.match_number;
+      numCol.appendChild(numLabel);
+      numCol.appendChild(numVal);
+
+      // Column 2: teams
+      var teamsCol = document.createElement('div');
+      teamsCol.className = 'pipeline-teams';
+
+      function addTeamEl(team, color) {
+        var el = document.createElement('span');
+        el.className = 'pipeline-team ' + color;
+        el.textContent = team ? team.number : '?';
+        teamsCol.appendChild(el);
       }
+      function addVs() {
+        var el = document.createElement('span');
+        el.className = 'pipeline-vs';
+        el.textContent = 'vs';
+        teamsCol.appendChild(el);
+      }
+
+      addTeamEl(m.red1_team,  'red');
+      addTeamEl(m.red2_team,  'red');
+      addVs();
+      addTeamEl(m.blue1_team, 'blue');
+      addTeamEl(m.blue2_team, 'blue');
+
+      // Column 3: state badge(s)
+      var badgesCol = document.createElement('div');
+      badgesCol.className = 'pipeline-badges';
+
+      var badge = document.createElement('span');
+      badge.className = 'pipeline-state-badge badge-' + stateKey;
+      badge.textContent = (m.state || 'UPCOMING').replace('_', ' ');
+      badgesCol.appendChild(badge);
+
+      if (isLoaded) {
+        var loadedTag = document.createElement('span');
+        loadedTag.className = 'pipeline-state-badge badge-loaded';
+        loadedTag.textContent = 'LOADED';
+        badgesCol.appendChild(loadedTag);
+      }
+
+      // Column 4: action buttons
+      var actionsCol = document.createElement('div');
+      actionsCol.className = 'pipeline-actions';
+
+      if (m.state === 'UPCOMING') {
+        var callBtn = document.createElement('button');
+        callBtn.className = 'pipeline-btn call-queue';
+        callBtn.textContent = 'Call to Queue';
+        callBtn.addEventListener('click', function () { setMatchState(m.id, 'QUEUED'); });
+        actionsCol.appendChild(callBtn);
+      }
+
+      if (m.state === 'QUEUED') {
+        var fieldBtn = document.createElement('button');
+        fieldBtn.className = 'pipeline-btn set-field';
+        fieldBtn.textContent = 'Set On Field';
+        fieldBtn.addEventListener('click', function () { setMatchState(m.id, 'ON_FIELD'); });
+        actionsCol.appendChild(fieldBtn);
+      }
+
+      if (m.state === 'ON_FIELD' && !isLoaded) {
+        var loadBtn = document.createElement('button');
+        loadBtn.className = 'pipeline-btn load-match';
+        loadBtn.textContent = 'Load Match';
+        loadBtn.addEventListener('click', function () { loadMatch(m.id); });
+        actionsCol.appendChild(loadBtn);
+
+        // Quick-resolve buttons: commit or replay without loading
+        var saveBtn = document.createElement('button');
+        saveBtn.className = 'pipeline-btn save-match';
+        saveBtn.textContent = 'Save';
+        (function (mid) {
+          saveBtn.addEventListener('click', function () {
+            fetch('/api/matches/' + mid + '/commit', { method: 'POST' })
+              .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+              .then(function () { showToast('Match saved', 'success'); fetchMatches(); })
+              .catch(function () { showToast('Failed to save match', 'error'); });
+          });
+        })(m.id);
+        actionsCol.appendChild(saveBtn);
+
+        var redoBtn = document.createElement('button');
+        redoBtn.className = 'pipeline-btn redo-match';
+        redoBtn.textContent = 'Redo';
+        (function (mid) {
+          redoBtn.addEventListener('click', function () {
+            fetch('/api/matches/' + mid + '/replay', { method: 'POST' })
+              .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+              .then(function () { showToast('Match reset to 0-0', 'success'); fetchMatches(); })
+              .catch(function () { showToast('Failed to reset match', 'error'); });
+          });
+        })(m.id);
+        actionsCol.appendChild(redoBtn);
+      }
+
+      row.appendChild(numCol);
+      row.appendChild(teamsCol);
+      row.appendChild(badgesCol);
+      row.appendChild(actionsCol);
+      return row;
     }
 
-    function updateMatchStateBadge(st) {
-      matchStateBadge.className = 'match-state-badge state-' + (st || 'upcoming').toLowerCase();
-      matchStateBadge.textContent = (st || 'UPCOMING').toUpperCase();
-    }
-
-    // ── Queue control ──────────────────────────────────────────────────────────
-    function setMatchState(newState) {
-      if (!state.loadedMatch) { showToast('No match loaded', 'error'); return; }
-      fetch('/api/matches/' + state.loadedMatch + '/state', {
+    // ── Match actions ──────────────────────────────────────────────────────────
+    function setMatchState(matchId, newState) {
+      fetch('/api/matches/' + matchId + '/state', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ state: newState }),
       })
-        .then(function (r) {
-          if (!r.ok) throw new Error('Failed');
-          return r.json();
-        })
+        .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
         .then(function () {
-          showToast('State → ' + newState, 'success');
-          updateMatchStateBadge(newState);
+          showToast(newState === 'QUEUED' ? 'Called to queue' : 'Set on field', 'success');
           fetchMatches();
         })
-        .catch(function () { showToast('Failed to set state', 'error'); });
+        .catch(function () { showToast('Failed to update state', 'error'); });
+    }
+
+    function loadMatch(matchId) {
+      // If a different match is already loaded, ask what to do with it first
+      if (state.loadedMatchId && state.loadedMatchId !== matchId) {
+        openNmatchPopup(state.loadedMatchId, matchId);
+        return;
+      }
+      doLoadMatch(matchId);
+    }
+
+    function doLoadMatch(matchId) {
+      fetch('/api/matches/' + matchId + '/load', { method: 'POST' })
+        .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+        .then(function () {
+          state.loadedMatchId = matchId;
+          state.matchEnded = false;
+          commitCard.classList.add('hidden');
+          updateLoadedLabel(matchId);
+          showToast('Match loaded', 'success');
+          // Apply existing motif if this match already has one
+          var m = state.matches.find(function (x) { return x.id === matchId; });
+          renderMotif(m && m.motif ? m.motif : null);
+          fetchMatches();
+          fetchScores(matchId);
+        })
+        .catch(function () { showToast('Failed to load match', 'error'); });
+    }
+
+    function updateLoadedLabel(matchId) {
+      if (!loadedLabel) return;
+      var m = state.matches.find(function (x) { return x.id === matchId; });
+      if (!m) { loadedLabel.textContent = ''; return; }
+      var rn = function (t) { return t ? t.number : '?'; };
+      loadedLabel.textContent = 'Match ' + m.match_number +
+        ' — R:' + rn(m.red1_team) + '/' + rn(m.red2_team) +
+        ' vs B:' + rn(m.blue1_team) + '/' + rn(m.blue2_team);
     }
 
     // ── Timer controls ─────────────────────────────────────────────────────────
     function timerPost(endpoint) {
       return fetch('/api/timer/' + endpoint, { method: 'POST' })
-        .then(function (r) { if (!r.ok) throw new Error('Failed'); return r.json(); })
+        .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
         .catch(function (e) { showToast('Timer error: ' + e.message, 'error'); });
     }
 
-    function handleStart()   { timerPost('start'); }
+    function handleStart() {
+      if (!state.currentMotif) {
+        showToast('Set the match motif before starting', 'error');
+        document.querySelector('.btn-randomize').classList.add('motif-warn');
+        setTimeout(function () {
+          var b = document.querySelector('.btn-randomize');
+          if (b) b.classList.remove('motif-warn');
+        }, 1800);
+        return;
+      }
+      timerPost('start');
+    }
     function handlePause()   { timerPost('pause'); }
     function handleResume()  { timerPost('resume'); }
     function handleAdvance() { timerPost('advance'); }
@@ -356,34 +1009,46 @@
     }
 
     // ── Score display ──────────────────────────────────────────────────────────
-    function updateScoreDisplay(data) {
+    function renderScores(data) {
       if (!data) return;
-      var red = data.red || {};
+      var red  = data.red  || {};
       var blue = data.blue || {};
       redTotal.textContent  = red.total  != null ? red.total  : 0;
       blueTotal.textContent = blue.total != null ? blue.total : 0;
       renderBreakdown(redBreakdown,  red,  'RED');
       renderBreakdown(blueBreakdown, blue, 'BLUE');
+      if (red.pattern_balls  != null) applyPatternRow(redPatternRow,  red.pattern_balls);
+      if (blue.pattern_balls != null) applyPatternRow(bluePatternRow, blue.pattern_balls);
+      renderRpPanel(redRpPanel,  data.redRP  || {}, 'RED');
+      renderRpPanel(blueRpPanel, data.blueRP || {}, 'BLUE');
+    }
+
+    function applyPatternRow(rowEl, ballsStr) {
+      if (!rowEl) return;
+      var balls = rowEl.querySelectorAll('.ctrl-pattern-ball');
+      for (var i = 0; i < balls.length; i++) {
+        balls[i].className = 'ctrl-pattern-ball' + (ballsStr[i] === '1' ? ' selected' : '');
+      }
     }
 
     function renderBreakdown(el, scores, label) {
       while (el.firstChild) el.removeChild(el.firstChild);
-      var titleEl = document.createElement('div');
-      titleEl.style.fontWeight = '700';
-      titleEl.style.marginBottom = '0.5rem';
-      titleEl.textContent = label;
-      el.appendChild(titleEl);
+      var title = document.createElement('div');
+      title.style.cssText = 'font-weight:700;margin-bottom:0.5rem;font-size:0.9rem;';
+      title.textContent = label;
+      el.appendChild(title);
 
+      var pts = scores.ptsBreakdown || {};
       var fields = [
-        ['Auto Classified', 'auto_classified'],
-        ['Auto Overflow',   'auto_overflow'],
-        ['Auto Leave',      'auto_leave'],
-        ['Auto Pattern',    'auto_pattern'],
-        ['Teleop Classified','teleop_classified'],
-        ['Teleop Overflow', 'teleop_overflow'],
-        ['Teleop Balls',    'teleop_balls'],
-        ['Park',            'park'],
-        ['Penalties',       'penalties'],
+        ['Auto Classified',   'auto_classified'],
+        ['Auto Overflow',     'auto_overflow'],
+        ['Auto Leave',        'auto_leave'],
+        ['Auto Pattern',      'auto_pattern'],
+        ['Teleop Classified', 'teleop_classified'],
+        ['Teleop Overflow',   'teleop_overflow'],
+        ['Teleop Pattern',    'teleop_pattern'],
+        ['Park',              'park'],
+        ['Penalties',         'penalties'],
       ];
       fields.forEach(function (f) {
         var row = document.createElement('div');
@@ -392,29 +1057,72 @@
         lbl.className = 'breakdown-label';
         lbl.textContent = f[0];
         var val = document.createElement('span');
-        val.textContent = scores[f[1]] != null ? scores[f[1]] : 0;
+        val.textContent = pts[f[1]] != null ? pts[f[1]] : 0;
         row.appendChild(lbl);
         row.appendChild(val);
         el.appendChild(row);
       });
     }
 
+    function renderRpPanel(el, rpData, label) {
+      while (el.firstChild) el.removeChild(el.firstChild);
+      var title = document.createElement('div');
+      title.style.cssText = 'font-weight:700;margin-bottom:0.5rem;font-size:0.9rem;';
+      title.textContent = label + ' RP';
+      el.appendChild(title);
+
+      var fields = [
+        ['Park RP',    'parkRp'],
+        ['Pattern RP', 'patternRp'],
+        ['Ball RP',    'ballRp'],
+      ];
+      fields.forEach(function (f) {
+        var row = document.createElement('div');
+        row.className = 'breakdown-row';
+        var lbl = document.createElement('span');
+        lbl.className = 'breakdown-label';
+        lbl.textContent = f[0];
+        var val = document.createElement('span');
+        val.textContent = rpData[f[1]] != null ? rpData[f[1]] : 0;
+        row.appendChild(lbl);
+        row.appendChild(val);
+        el.appendChild(row);
+      });
+
+      var totalRow = document.createElement('div');
+      totalRow.className = 'breakdown-row';
+      totalRow.style.borderTop = '1px solid var(--border)';
+      var totalLbl = document.createElement('span');
+      totalLbl.className = 'breakdown-label';
+      totalLbl.textContent = 'Total RP';
+      var totalVal = document.createElement('span');
+      totalVal.textContent = rpData.total != null ? rpData.total : 0;
+      totalVal.style.fontWeight = '700';
+      totalRow.appendChild(totalLbl);
+      totalRow.appendChild(totalVal);
+      el.appendChild(totalRow);
+    }
+
     // ── Commit scores ──────────────────────────────────────────────────────────
     function commitScores() {
-      if (!state.loadedMatch) { showToast('No match loaded', 'error'); return; }
-      fetch('/api/matches/' + state.loadedMatch + '/commit', { method: 'POST' })
-        .then(function (r) { if (!r.ok) throw new Error('Failed'); return r.json(); })
+      if (!state.loadedMatchId) { showToast('No match loaded', 'error'); return; }
+      fetch('/api/matches/' + state.loadedMatchId + '/commit', { method: 'POST' })
+        .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
         .then(function () {
           showToast('Scores committed', 'success');
-          commitSection.classList.add('hidden');
+          commitCard.classList.add('hidden');
           state.matchEnded = false;
+          state.loadedMatchId = null;
+          if (loadedLabel) loadedLabel.textContent = '';
+          renderMotif(null);
+          updateTimerButtons(null);
           fetchMatches();
         })
         .catch(function () { showToast('Failed to commit scores', 'error'); });
     }
 
-    // ── Socket events ──────────────────────────────────────────────────────────
-    function connectSocketEvents() {
+    // ── Socket ─────────────────────────────────────────────────────────────────
+    function connectSocket() {
       var socket = SK.connectSocket();
       if (!socket) return;
 
@@ -431,31 +1139,91 @@
 
       socket.on('match_start', function (ts) {
         state.matchEnded = false;
-        commitSection.classList.add('hidden');
+        commitCard.classList.add('hidden');
         SK.applyTimerState(ts, timerEl, periodLabelEl);
+        setMotifLocked(true);
+        updateTimerButtons(ts);
+      });
+
+      socket.on('match_paused', function (ts) {
+        SK.applyTimerState(ts, timerEl, periodLabelEl);
+        updateTimerButtons(ts);
+      });
+
+      socket.on('match_resumed', function (ts) {
+        SK.applyTimerState(ts, timerEl, periodLabelEl);
+        updateTimerButtons(ts);
       });
 
       socket.on('match_end', function (data) {
         state.matchEnded = true;
-        commitSection.classList.remove('hidden');
-        if (data && data.scores) updateScoreDisplay(data.scores);
-        showToast('Match ended', 'success');
+        commitCard.classList.remove('hidden');
+        if (data && data.scores) renderScores(data.scores);
+        showToast('Match ended — commit scores when ready', 'success');
+        updateTimerButtons(data && data.state ? data.state : null);
       });
 
       socket.on('score_update', function (data) {
-        updateScoreDisplay(data);
+        renderScores(data);
       });
 
       socket.on('match_loaded', function (data) {
         if (data && data.matchId) {
-          state.loadedMatch = data.matchId;
-          updateLoadedMatchDisplay(data.matchId);
+          state.loadedMatchId = data.matchId;
+          state.matchEnded = false;
+          updateLoadedLabel(data.matchId);
+          renderPipeline();
         }
+        setMotifLocked(false);
+        updateTimerButtons({ matchId: state.loadedMatchId, running: false, paused: false, matchEnded: false });
         fetchMatches();
+      });
+
+      socket.on('match_abort', function () {
+        setMotifLocked(false);
+        state.loadedMatchId = null;
+        state.matchEnded = false;
+        commitCard.classList.add('hidden');
+        if (loadedLabel) loadedLabel.textContent = '';
+        renderMotif(null);
+        updateTimerButtons(null);
+        fetchMatches();
+      });
+
+      socket.on('match_state_change', function () {
+        fetchMatches();
+      });
+
+      socket.on('queue_update', function () {
+        fetchMatches();
+      });
+
+      socket.on('motif_update', function (data) {
+        // Only update display if it's for the currently loaded match
+        if (data && data.matchId === state.loadedMatchId) {
+          renderMotif(data.motif);
+        }
       });
     }
 
   })();
   </script>
+
+  <!-- ── Next-match popup ──────────────────────────────────────────────────── -->
+  <div id="nmatch-backdrop" class="nmatch-backdrop">
+    <div class="nmatch-modal">
+      <div class="nmatch-title" id="nmatch-title">Loading next match</div>
+      <div class="nmatch-sub"  id="nmatch-sub">What do you want to do with the current match?</div>
+      <button class="nmatch-btn save"   id="nmatch-save">
+        Save the Game
+        <span class="btn-desc">Scores are final — match won't appear in the pipeline again</span>
+      </button>
+      <button class="nmatch-btn redo"   id="nmatch-redo">
+        Mark as Redo
+        <span class="btn-desc">Reset to 0-0 — match returns to the pipeline for a replay</span>
+      </button>
+      <button class="nmatch-btn cancel" id="nmatch-cancel">Cancel</button>
+    </div>
+  </div>
 </body>
 </html>

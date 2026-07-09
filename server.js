@@ -22,6 +22,21 @@ const io = new SocketIO(server, { cors: { origin: '*' } });
 const db = getDb();
 const timer = new MatchTimer(io);
 
+// Reset pattern grid at the start of each new AUTO or TELEOP cycle so scorers start fresh.
+// The accumulated count (auto_pattern / teleop_pattern) is preserved for scoring.
+timer.onPeriodChange = function(state) {
+  if (!timer.matchId || !state.period) return;
+  const { type, cycle } = state.period;
+  if (type === 'AUTO' && cycle > 1) {
+    db.prepare("UPDATE match_scores SET pattern_balls='000000000' WHERE match_id=?").run(timer.matchId);
+    broadcastScores(timer.matchId);
+  }
+  if (type === 'TELEOP' && cycle > 1) {
+    db.prepare("UPDATE match_scores SET teleop_pattern_balls='000000000' WHERE match_id=?").run(timer.matchId);
+    broadcastScores(timer.matchId);
+  }
+};
+
 app.use(express.json());
 app.use(cookieParser());
 app.use(session({
@@ -35,6 +50,8 @@ app.use(session({
 app.use('/css', express.static(path.join(__dirname, 'public', 'css')));
 app.use('/js',  express.static(path.join(__dirname, 'public', 'js')));
 app.use('/sounds', express.static(path.join(__dirname, 'public', 'sounds')));
+app.use('/img', express.static(path.join(__dirname, 'public', 'img')));
+app.use('/fonts', express.static(path.join(__dirname, 'public', 'fonts')));
 // socket.io client is served automatically by the socket.io library
 app.use('/socket.io', express.static(path.join(__dirname, 'node_modules', 'socket.io', 'client-dist')));
 
@@ -57,12 +74,26 @@ app.get('/bracket',    servePage('bracket.html'));
 app.get('/control',    servePage('control.html'));
 app.get('/red',        servePage('red.html'));
 app.get('/blue',       servePage('blue.html'));
-app.get('/ref',        servePage('ref.html'));
+app.get('/ref-red',    servePage('ref.html'));
+app.get('/ref-blue',   servePage('ref-blue.html'));
 app.get('/headref',    servePage('headref.html'));
 app.get('/queue',      servePage('queue.html'));
 
 // Admin
 app.get('/admin',      servePage('admin.html'));
+
+// Documentation
+app.get('/docs',       servePage('docs.html'));
+app.get('/api/docs/readme', (_req, res) => {
+  const fs = require('fs');
+  const readmePath = path.join(__dirname, 'README.md');
+  try {
+    const content = fs.readFileSync(readmePath, 'utf8');
+    res.type('text/plain').send(content);
+  } catch (e) {
+    res.status(404).send('README.md not found');
+  }
+});
 
 // ─── Auth API ─────────────────────────────────────────────────────────────────
 
@@ -240,7 +271,40 @@ app.post('/api/matches/:id/load', (req, res) => {
   const periods = expandPeriods(periodRows);
   timer.load(matchId, periods);
 
+  // Broadcast current motif so display and other clients sync immediately
+  io.emit('motif_update', { matchId, motif: match.motif || null });
+
   res.json({ ok: true, periods });
+});
+
+// Randomize motif for a match (GPP / PGP / PPG)
+const MOTIFS = ['GPP', 'PGP', 'PPG'];
+
+app.post('/api/matches/:id/motif/randomize', (req, res) => {
+  const matchId = Number(req.params.id);
+  const match = db.prepare('SELECT * FROM matches WHERE id=?').get(matchId);
+  if (!match) return res.status(404).json({ error: 'Match not found' });
+  if (timer.running && timer.matchId === matchId) {
+    return res.status(409).json({ error: 'Cannot change motif while match is running' });
+  }
+
+  const motif = MOTIFS[Math.floor(Math.random() * MOTIFS.length)];
+  db.prepare('UPDATE matches SET motif=? WHERE id=?').run(motif, matchId);
+
+  io.emit('motif_update', { matchId, motif, reveal: true });
+  res.json({ ok: true, motif });
+});
+
+app.put('/api/matches/:id/motif', (req, res) => {
+  const matchId = Number(req.params.id);
+  const { motif } = req.body;
+  if (!MOTIFS.includes(motif)) return res.status(400).json({ error: 'Invalid motif' });
+  if (timer.running && timer.matchId === matchId) {
+    return res.status(409).json({ error: 'Cannot change motif while match is running' });
+  }
+  db.prepare('UPDATE matches SET motif=? WHERE id=?').run(motif, matchId);
+  io.emit('motif_update', { matchId, motif });
+  res.json({ ok: true, motif });
 });
 
 // ─── Scoring API ──────────────────────────────────────────────────────────────
@@ -249,7 +313,9 @@ app.get('/api/matches/:id/scores', (req, res) => {
   const matchId = Number(req.params.id);
   const red = getFullScore(db, matchId, 'red');
   const blue = getFullScore(db, matchId, 'blue');
-  res.json({ red, blue });
+  const redRP = computeLiveRP(db, matchId, 'red');
+  const blueRP = computeLiveRP(db, matchId, 'blue');
+  res.json({ red, blue, redRP, blueRP });
 });
 
 app.get('/api/matches/:id/penalties', (req, res) => {
@@ -277,7 +343,7 @@ app.post('/api/matches/:id/override', (req, res) => {
   const matchId = Number(req.params.id);
   const { alliance, field, value, changedBy } = req.body;
 
-  const allowed = ['auto_classified','auto_overflow','auto_leave','auto_pattern',
+  const allowed = ['auto_classified','auto_overflow','auto_leave','auto_leave_r1','auto_leave_r2','auto_pattern',
     'teleop_classified','teleop_overflow','teleop_balls'];
   if (!allowed.includes(field)) return res.status(400).json({ error: 'Unknown field' });
 
@@ -293,7 +359,7 @@ app.post('/api/matches/:id/override', (req, res) => {
 // Replay: reset scores for a match
 app.post('/api/matches/:id/replay', (req, res) => {
   const matchId = Number(req.params.id);
-  db.prepare('UPDATE match_scores SET auto_classified=0,auto_overflow=0,auto_leave=0,auto_pattern=0,teleop_classified=0,teleop_overflow=0,teleop_balls=0,yellow_cards=?,red_cards=?,committed=0 WHERE match_id=?')
+  db.prepare("UPDATE match_scores SET auto_classified=0,auto_overflow=0,auto_leave=0,auto_leave_r1=0,auto_leave_r2=0,auto_pattern=0,pattern_balls='000000000',teleop_classified=0,teleop_overflow=0,teleop_balls=0,teleop_pattern=0,teleop_pattern_balls='000000000',yellow_cards=?,red_cards=?,committed=0 WHERE match_id=?")
     .run('[]', '[]', matchId);
   db.prepare('DELETE FROM endgame_cycles WHERE match_id=?').run(matchId);
   db.prepare('DELETE FROM penalties WHERE match_id=?').run(matchId);
@@ -336,7 +402,7 @@ app.get('/api/periods', (_req, res) => {
 });
 
 app.put('/api/periods', (req, res) => {
-  const periods = req.body;
+  const periods = Array.isArray(req.body) ? req.body : req.body?.periods;
   if (!Array.isArray(periods)) return res.status(400).json({ error: 'Expected array' });
 
   db.prepare('DELETE FROM period_config').run();
@@ -482,6 +548,13 @@ function broadcastScores(matchId) {
   const blue = getFullScore(db, matchId, 'blue');
   const redRP = computeLiveRP(db, matchId, 'red');
   const blueRP = computeLiveRP(db, matchId, 'blue');
+  // Attach current-cycle park status for scorer UIs
+  const cycle = timer.endgameCycle || 0;
+  for (const scoreObj of [red, blue]) {
+    const cyc = cycle > 0 ? scoreObj.cycles.find(c => c.cycle === cycle) : null;
+    scoreObj.park_r1 = cyc ? cyc.r1_park : 'none';
+    scoreObj.park_r2 = cyc ? cyc.r2_park : 'none';
+  }
   io.emit('score_update', { matchId, red, blue, redRP, blueRP });
 }
 
@@ -492,9 +565,11 @@ io.on('connection', (socket) => {
   socket.emit('timer_state', timer.getState());
   socket.emit('queue_update', getQueueState());
 
-  // Send current match scores if a match is loaded
+  // Send current match scores and motif if a match is loaded
   if (timer.matchId) {
     broadcastScores(timer.matchId);
+    const loadedMatch = db.prepare('SELECT motif FROM matches WHERE id=?').get(timer.matchId);
+    socket.emit('motif_update', { matchId: timer.matchId, motif: (loadedMatch && loadedMatch.motif) || null });
   }
 
   // ── Score updates from scorers ──────────────────────────────────────────
@@ -503,23 +578,64 @@ io.on('connection', (socket) => {
     if (!timer.matchId || timer.matchId !== matchId) return;
     if (!timer.running) return;
     const period = timer.currentPeriod;
-    if (!period || ['TRANSITION','BUZZER'].includes(period.type)) return;
+    if (!period || period.type === 'BUZZER') return;
 
     // Validate field belongs to current period type
-    const autoFields = ['auto_classified','auto_overflow','auto_leave','auto_pattern'];
+    const autoFields = ['auto_classified','auto_overflow','auto_pattern'];
     const teleopFields = ['teleop_classified','teleop_overflow','teleop_balls'];
-    if (period.type === 'AUTO' && !autoFields.includes(field)) return;
-    if (period.type === 'TELEOP' && !teleopFields.includes(field)) return;
-    if (!['AUTO','TELEOP','ENDGAME'].includes(period.type)) return;
-
-    // auto_leave max = 2
-    if (field === 'auto_leave') {
-      const cur = db.prepare('SELECT auto_leave FROM match_scores WHERE match_id=? AND alliance=?').get(matchId, alliance);
-      if (cur && cur.auto_leave >= 2) return;
-    }
+    if (period.type === 'AUTO'        && !autoFields.includes(field)) return;
+    if (period.type === 'TRANSITION'  && field !== 'auto_pattern') return;
+    if (period.type === 'TELEOP'      && !teleopFields.includes(field)) return;
+    if (!['AUTO','TRANSITION','TELEOP','ENDGAME'].includes(period.type)) return;
 
     db.prepare(`UPDATE match_scores SET ${field}=${field}+1 WHERE match_id=? AND alliance=?`).run(matchId, alliance);
     broadcastScores(matchId);
+  });
+
+  // Boolean toggle fields (auto_leave_r1, auto_leave_r2)
+  socket.on('score_set', ({ matchId, alliance, field, value }) => {
+    if (!timer.matchId || timer.matchId !== matchId) return;
+    if (!timer.running) return;
+    const period = timer.currentPeriod;
+    // Allow setting auto_leave during TRANSITION so scorers can correct it after AUTO ends
+    if (!period || period.type === 'BUZZER') return;
+
+    const setFields = ['auto_leave_r1', 'auto_leave_r2'];
+    if (!setFields.includes(field)) return;
+
+    const safeVal = value ? 1 : 0;
+    db.prepare(`UPDATE match_scores SET ${field}=? WHERE match_id=? AND alliance=?`).run(safeVal, matchId, alliance);
+    broadcastScores(matchId);
+  });
+
+  // ── Pattern ball toggle ─────────────────────────────────────────────────
+  socket.on('pattern_ball', ({ matchId, alliance, ballIdx, selected }) => {
+    if (!timer.matchId || timer.matchId !== matchId) return;
+    if (!timer.running) return;
+    const period = timer.currentPeriod;
+    if (!period) return;
+    if (typeof ballIdx !== 'number' || ballIdx < 0 || ballIdx > 8) return;
+    if (!['red', 'blue'].includes(alliance)) return;
+
+    if (period.type === 'TRANSITION') {
+      const row = db.prepare('SELECT pattern_balls FROM match_scores WHERE match_id=? AND alliance=?').get(matchId, alliance);
+      const arr = (row?.pattern_balls || '000000000').split('');
+      arr[ballIdx] = selected ? '1' : '0';
+      const newBalls = arr.join('');
+      const count    = arr.filter(b => b === '1').length;
+      db.prepare('UPDATE match_scores SET pattern_balls=?, auto_pattern=? WHERE match_id=? AND alliance=?')
+        .run(newBalls, count, matchId, alliance);
+      broadcastScores(matchId);
+    } else if (period.type === 'TELEOP' || period.type === 'ENDGAME' || period.type === 'BUZZER') {
+      const row = db.prepare('SELECT teleop_pattern_balls FROM match_scores WHERE match_id=? AND alliance=?').get(matchId, alliance);
+      const arr = (row?.teleop_pattern_balls || '000000000').split('');
+      arr[ballIdx] = selected ? '1' : '0';
+      const newBalls = arr.join('');
+      const count    = arr.filter(b => b === '1').length;
+      db.prepare('UPDATE match_scores SET teleop_pattern_balls=?, teleop_pattern=? WHERE match_id=? AND alliance=?')
+        .run(newBalls, count, matchId, alliance);
+      broadcastScores(matchId);
+    }
   });
 
   socket.on('score_decrement', ({ matchId, alliance, field }) => {
@@ -539,7 +655,7 @@ io.on('connection', (socket) => {
   socket.on('park_update', ({ matchId, alliance, robot, status }) => {
     if (!timer.matchId || timer.matchId !== matchId) return;
     const period = timer.currentPeriod;
-    if (!period || period.type !== 'ENDGAME') return;
+    if (!period || !['ENDGAME', 'BUZZER'].includes(period.type)) return;
 
     const cycle = timer.endgameCycle || 1;
     const col = robot === 1 ? 'r1_park' : 'r2_park';

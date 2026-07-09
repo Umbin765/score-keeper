@@ -119,6 +119,32 @@ function initSchema(db) {
     )
   `);
 
+  // Add motif column to matches if it doesn't exist yet (migration)
+  try {
+    db.prepare("ALTER TABLE matches ADD COLUMN motif TEXT CHECK(motif IN ('GPP','PGP','PPG'))").run();
+  } catch (_) { /* column already exists */ }
+
+  // Add per-robot leave columns (replaces single auto_leave count)
+  try {
+    db.prepare("ALTER TABLE match_scores ADD COLUMN auto_leave_r1 INTEGER NOT NULL DEFAULT 0").run();
+  } catch (_) { /* column already exists */ }
+  try {
+    db.prepare("ALTER TABLE match_scores ADD COLUMN auto_leave_r2 INTEGER NOT NULL DEFAULT 0").run();
+  } catch (_) { /* column already exists */ }
+
+  // Per-ball pattern state (9 chars, '0'/'1')
+  try {
+    db.prepare("ALTER TABLE match_scores ADD COLUMN pattern_balls TEXT NOT NULL DEFAULT '000000000'").run();
+  } catch (_) { /* column already exists */ }
+
+  // Teleop (endgame) pattern balls — separate from auto pattern
+  try {
+    db.prepare("ALTER TABLE match_scores ADD COLUMN teleop_pattern_balls TEXT NOT NULL DEFAULT '000000000'").run();
+  } catch (_) { /* column already exists */ }
+  try {
+    db.prepare("ALTER TABLE match_scores ADD COLUMN teleop_pattern INTEGER NOT NULL DEFAULT 0").run();
+  } catch (_) { /* column already exists */ }
+
   runSchema(db, `
     CREATE TABLE IF NOT EXISTS alliance_selections (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -265,14 +291,19 @@ function getFullScore(db, matchId, alliance) {
     "SELECT * FROM penalties WHERE match_id=? AND alliance=? AND type IN ('minor','major')"
   ).all(matchId, opp);
 
+  const leaveR1 = scores.auto_leave_r1 ?? 0;
+  const leaveR2 = scores.auto_leave_r2 ?? 0;
+  const leaveCount = leaveR1 + leaveR2;
+
   let total = 0;
   total += scores.auto_classified * pv.auto_classified;
   total += scores.auto_overflow * pv.auto_overflow;
-  total += scores.auto_leave * pv.auto_leave;
+  total += leaveCount * pv.auto_leave;
   total += scores.auto_pattern * pv.auto_pattern;
   total += scores.teleop_classified * pv.teleop_classified;
   total += scores.teleop_overflow * pv.teleop_overflow;
   total += scores.teleop_balls * pv.teleop_balls;
+  total += (scores.teleop_pattern || 0) * pv.auto_pattern;
 
   let parkScore = 0;
   for (const c of cycles) {
@@ -291,7 +322,7 @@ function getFullScore(db, matchId, alliance) {
 
   const autoTotal   = scores.auto_classified * pv.auto_classified
                     + scores.auto_overflow   * pv.auto_overflow
-                    + scores.auto_leave      * pv.auto_leave
+                    + leaveCount             * pv.auto_leave
                     + scores.auto_pattern    * pv.auto_pattern;
   const teleopTotal = scores.teleop_classified * pv.teleop_classified
                     + scores.teleop_overflow   * pv.teleop_overflow
@@ -301,16 +332,40 @@ function getFullScore(db, matchId, alliance) {
     total,
     autoTotal,
     teleopTotal,
+    // Flat fields so client can access them directly (e.g. allianceData.auto_classified)
+    auto_classified: scores.auto_classified,
+    auto_overflow: scores.auto_overflow,
+    auto_leave_r1: leaveR1,
+    auto_leave_r2: leaveR2,
+    auto_pattern: scores.auto_pattern,
+    pattern_balls: scores.pattern_balls || '000000000',
+    teleop_pattern_balls: scores.teleop_pattern_balls || '000000000',
+    teleop_classified: scores.teleop_classified,
+    teleop_overflow: scores.teleop_overflow,
+    teleop_balls: scores.teleop_balls,
+    penalties: penaltyPts,
     breakdown: {
       auto_classified: scores.auto_classified,
       auto_overflow: scores.auto_overflow,
-      auto_leave: scores.auto_leave,
+      auto_leave: leaveCount,
       auto_pattern: scores.auto_pattern,
       teleop_classified: scores.teleop_classified,
       teleop_overflow: scores.teleop_overflow,
       teleop_balls: scores.teleop_balls,
       park_score: parkScore,
       penalty_pts: penaltyPts,
+    },
+    ptsBreakdown: {
+      auto_classified: scores.auto_classified * pv.auto_classified,
+      auto_overflow:   scores.auto_overflow   * pv.auto_overflow,
+      auto_leave:      leaveCount             * pv.auto_leave,
+      auto_pattern:    scores.auto_pattern    * pv.auto_pattern,
+      teleop_classified: scores.teleop_classified * pv.teleop_classified,
+      teleop_overflow:   scores.teleop_overflow   * pv.teleop_overflow,
+      teleop_balls:      scores.teleop_balls      * pv.teleop_balls,
+      teleop_pattern:    (scores.teleop_pattern || 0) * pv.auto_pattern,
+      park:     parkScore,
+      penalties: penaltyPts,
     },
     raw: scores,
     cycles,

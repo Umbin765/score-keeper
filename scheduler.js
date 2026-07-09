@@ -14,7 +14,8 @@ function generateSchedule(teams, matchesPerTeam) {
     throw new Error('Need at least 4 teams to generate a schedule');
   }
 
-  const ids = teams.map(t => t.id);
+  // Shuffle team order so each generated schedule is different
+  const ids = teams.map(t => t.id).sort(() => Math.random() - 0.5);
   const n = ids.length;
   const totalSlots = n * matchesPerTeam;
 

@@ -131,11 +131,13 @@
         ['Audience', 'public', '/bracket',  'Playoff Bracket',  'Visual playoff bracket. Updates live as matches are played.'],
         ['Queue',    'pin',    '/queue',     'Queue Display',    'Large-font queueing area screen. PIN protected. Shows ON FIELD, REPORT TO QUEUE, and UPCOMING matches.'],
         ['Operators','pin',    '/control',   'Control Panel',    'Match control — start, pause, resume, abort. PIN protected.'],
-        ['Operators','pin',    '/red',       'Red Alliance',     'Red alliance scoring tablet. PIN protected.'],
-        ['Operators','pin',    '/blue',      'Blue Alliance',    'Blue alliance scoring tablet. PIN protected.'],
-        ['Operators','pin',    '/ref',       'Referee Panel',    'Field referee card and penalty entry. PIN protected.'],
-        ['Operators','pin',    '/headref',   'Head Referee',     'Head referee override and review panel. PIN protected.'],
+        ['Operators','pin',    '/red',       'Red Alliance Scorer',  'Red alliance scoring tablet. PIN protected.'],
+        ['Operators','pin',    '/blue',      'Blue Alliance Scorer', 'Blue alliance scoring tablet. PIN protected.'],
+        ['Operators','pin',    '/ref-red',   'Red Field Referee',    'Red alliance field referee — minor and major fouls. PIN protected.'],
+        ['Operators','pin',    '/ref-blue',  'Blue Field Referee',   'Blue alliance field referee — minor and major fouls. PIN protected.'],
+        ['Operators','pin',    '/headref',   'Head Referee',         'Head referee — all penalties, yellow/red cards, commit scores. PIN protected.'],
         ['Admin',    'admin',  '/admin',     'Admin Panel',      'Full event management: teams, schedule, PIN settings, exports. Password protected.'],
+        ['Admin',    'public', '/docs',      'Documentation',    'Full project documentation — API reference, database schema, socket events, and more.'],
       ];
 
       var sections = {};

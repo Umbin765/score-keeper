@@ -3,374 +3,376 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Display Overlay — Score Keeper</title>
-  <link rel="stylesheet" href="/css/style.css">
+  <title>Display — Score Keeper</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
   <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html, body {
-      margin: 0; padding: 0;
       width: 100vw; height: 100vh;
-      background: transparent !important;
+      background: transparent;
       overflow: hidden;
-      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-family: 'Roboto', Tahoma, Arial, sans-serif;
     }
 
-    /* ───── Wrapper pinned to bottom ───── */
+    /*
+     * The overlay is designed on a fixed 1920×1080 canvas (all values in px,
+     * taken from the reference broadcast display) and scaled to the viewport
+     * width by JS. At 1920px wide the scale is exactly 1.
+     */
     #overlay {
-      position: fixed;
-      bottom: 0; left: 0; right: 0;
+      position: fixed; bottom: 0; left: 0;
+      width: 1920px; height: 255px;
+      transform-origin: 0 100%;
     }
 
-    /* ───── TOP INFO STRIP ───── */
-    #top-strip {
-      height: 3.2vh;
-      background: rgba(12, 12, 12, 0.96);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 1.4vw;
-      border-bottom: 1px solid rgba(255,255,255,0.07);
+    /* ── MOTIF REVEAL SCREEN ── */
+    #motif-reveal {
+      position: fixed; top: 0; left: 0; right: 0;
+      bottom: calc(100vw * 255 / 1920);
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(0, 0, 0, 0.90);
+      z-index: 50;
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.45s ease;
     }
-    #event-name {
-      font-size: clamp(0.6rem, 1.05vw, 0.9rem);
-      font-weight: 600;
-      color: rgba(255,255,255,0.80);
-      letter-spacing: 0.02em;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    #match-info {
-      font-size: clamp(0.6rem, 1.05vw, 0.9rem);
-      font-weight: 600;
-      color: rgba(255,255,255,0.55);
-      white-space: nowrap;
-      flex-shrink: 0;
-      margin-left: 1rem;
-    }
-
-    /* ───── MAIN SCOREBOARD BAR ───── */
-    #score-bar {
-      height: 13.5vh;
-      background: rgba(12, 12, 12, 0.96);
-      display: flex;
-      align-items: stretch;
-    }
-
-    /* ── Outer card column ── */
-    .outer-col {
-      width: 4.8vw;
-      flex-shrink: 0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 0.6vh;
-      padding: 0 0.4vw;
-    }
-    .blue-outer { border-right: 1px solid rgba(255,255,255,0.07); }
-    .red-outer  { border-left:  1px solid rgba(255,255,255,0.07); }
-
-    .card-box {
-      width: clamp(14px, 1.5vw, 22px);
-      height: clamp(14px, 1.5vw, 22px);
-      border-radius: 3px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: clamp(8px, 0.85vw, 13px);
-      font-weight: 900;
-      line-height: 1;
-    }
-    .card-box.yellow { background: #d4a000; color: #000; }
-    .card-box.red-c  { background: #cc0000; color: #fff; }
-    .card-box.none   { background: rgba(255,255,255,0.10); color: rgba(255,255,255,0.35); font-size: clamp(8px, 0.8vw, 11px); }
-
-    .foul-tally {
-      font-size: clamp(0.7rem, 1.1vw, 1rem);
-      font-weight: 700;
-      font-family: 'Courier New', monospace;
-      color: rgba(255,255,255,0.40);
-      line-height: 1;
-    }
-
-    /* ── Sub-score column (auto / teleop) ── */
-    .sub-col {
-      width: 8.5vw;
-      flex-shrink: 0;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      gap: 0.9vh;
-      padding: 0 0.7vw;
-    }
-    .sub-row {
-      display: flex;
-      align-items: center;
-      gap: 0.35vw;
-    }
-    .sub-arrow {
-      font-size: clamp(0.55rem, 0.85vw, 0.8rem);
-      color: rgba(255,255,255,0.25);
-      line-height: 1;
-    }
-    .sub-val {
-      font-size: clamp(0.7rem, 1.15vw, 1.05rem);
-      font-weight: 700;
-      font-family: 'Courier New', monospace;
-      color: rgba(255,255,255,0.50);
-      line-height: 1;
-      min-width: 3ch;
-    }
-    .blue-sub .sub-val { color: rgba(100, 175, 255, 0.70); }
-    .red-sub  .sub-val { color: rgba(255, 100, 100, 0.70); }
-
-    /* ── Team numbers column ── */
-    .teams-col {
-      width: 10vw;
-      flex-shrink: 0;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      gap: 0.6vh;
-      padding: 0 0.6vw;
-    }
-    .team-num {
-      font-size: clamp(0.9rem, 1.65vw, 1.5rem);
-      font-weight: 800;
-      font-family: 'Courier New', monospace;
-      color: rgba(255, 255, 255, 0.85);
-      line-height: 1.15;
-      letter-spacing: 0.02em;
-    }
-
-    /* ── Score block (alliance label + big score) ── */
-    .score-block {
-      flex: 1;
-      min-width: 0;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      padding: 0.4vh 1.4vw 0;
-    }
-    .blue-block { align-items: flex-end; }
-    .red-block  { align-items: flex-start; }
-
-    .a-label {
-      font-size: clamp(0.65rem, 1.2vw, 1.1rem);
-      font-weight: 800;
-      text-transform: uppercase;
-      letter-spacing: 0.12em;
-      line-height: 1;
-      margin-bottom: -0.05em;
-    }
-    .blue-block .a-label { color: #4da8ff; }
-    .red-block  .a-label { color: #ff5050; }
-
-    .a-score {
-      font-size: clamp(3rem, 10.5vh, 9.5vh);
-      font-weight: 900;
-      font-family: 'Courier New', monospace;
-      font-variant-numeric: tabular-nums;
-      line-height: 0.92;
-      letter-spacing: -0.02em;
-    }
-    .blue-block .a-score { color: #4da8ff; }
-    .red-block  .a-score { color: #ff5050; }
-
-    /* Winner glow on match_end */
-    .score-block.winner .a-score {
-      text-shadow: 0 0 30px currentColor;
-    }
-
-    /* ── CENTER: timer + period + RP dots ── */
-    #center-panel {
-      width: 14vw;
-      flex-shrink: 0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 0.3vh;
-      padding: 0 0.5vw;
-    }
-
-    #period-label {
-      font-size: clamp(0.5rem, 0.95vw, 0.85rem);
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.14em;
-      color: rgba(255,255,255,0.38);
-      line-height: 1;
-    }
-    #period-label.auto       { color: rgba(255,255,255,0.70); }
-    #period-label.teleop     { color: #5aadff; }
-    #period-label.endgame    { color: #ffd93d; }
-    #period-label.transition { color: rgba(255,255,255,0.28); }
-    #period-label.buzzer     { color: #00cc44; }
-
-    #timer-display {
-      font-size: clamp(2rem, 8.5vh, 7.8vh);
-      font-weight: 900;
-      font-family: 'Courier New', monospace;
-      color: #ffffff;
-      line-height: 1;
-      font-variant-numeric: tabular-nums;
-      letter-spacing: -0.03em;
-    }
-    #timer-display.endgame { color: #ffd93d; }
-    #timer-display.final   { color: #ff4444; }
-
-    /* RP dots row: 3 blue | divider | 3 red */
-    #rp-dots {
-      display: flex;
-      align-items: center;
-      gap: 0.35vw;
-    }
-    .rp-dot {
-      width: clamp(7px, 0.85vw, 13px);
-      height: clamp(7px, 0.85vw, 13px);
-      border-radius: 50%;
-      background: rgba(255,255,255,0.10);
-      border: 1.5px solid rgba(255,255,255,0.18);
-      flex-shrink: 0;
-      transition: background 0.3s, box-shadow 0.3s, border-color 0.3s;
-    }
-    .rp-dot.lit-blue  { background: #4da8ff; border-color: #4da8ff; box-shadow: 0 0 5px #4da8ff; }
-    .rp-dot.lit-green { background: #00cc44; border-color: #00cc44; box-shadow: 0 0 5px #00cc44; }
-    .rp-sep {
-      width: 1px;
-      height: clamp(6px, 0.8vw, 12px);
-      background: rgba(255,255,255,0.18);
-      margin: 0 0.2vw;
-      flex-shrink: 0;
-    }
-
-    /* ───── WAITING STATE ─────
-       shown before match_start; bar visible but dimmed */
-    #score-bar.waiting .a-score,
-    #score-bar.waiting .team-num,
-    #score-bar.waiting .sub-val,
-    #score-bar.waiting .foul-tally {
-      opacity: 0.30;
-    }
-    #score-bar.waiting #timer-display { color: rgba(255,255,255,0.25); }
-    #score-bar.waiting #period-label  { color: rgba(255,255,255,0.20) !important; }
-
-    /* ───── POST-MATCH BANNER ─────
-       rises above the bar on match_end */
-    #post-banner {
-      position: absolute;
-      bottom: 100%;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(0, 18, 0, 0.94);
-      border: 2px solid #00cc44;
-      border-radius: 10px 10px 0 0;
-      padding: 0.65rem 3.5rem 0.8rem;
+    #motif-reveal.visible { opacity: 1; pointer-events: auto; }
+    .motif-card {
+      background: #fff; border-radius: 14px;
+      padding: clamp(1.4rem, 3.5vh, 2.6rem) clamp(2rem, 5vw, 4rem);
       text-align: center;
-      display: none;
-      white-space: nowrap;
+      box-shadow: 0 12px 60px rgba(0,0,0,0.6);
+      display: flex; flex-direction: column; align-items: center; gap: clamp(0.8rem, 2vh, 1.4rem);
+    }
+    #reveal-balls {
+      display: flex; gap: clamp(1rem, 3vw, 2.5rem); align-items: center; justify-content: center;
+    }
+    .reveal-ball {
+      width: clamp(70px, 12vw, 140px); height: clamp(70px, 12vw, 140px); flex-shrink: 0;
+    }
+    #reveal-label {
+      font-size: clamp(1rem, 3.2vw, 2.4rem); font-weight: 700;
+      color: #111; text-transform: uppercase; letter-spacing: 0.1em; line-height: 1;
+    }
+
+    /* ── POST-MATCH BANNER ── */
+    #post-banner {
+      position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+      background: rgba(0,18,0,0.95); border: 2px solid #00cc44;
+      border-radius: 10px 10px 0 0; padding: 10px 48px 12px;
+      text-align: center; display: none; white-space: nowrap;
     }
     #post-banner.visible { display: block; }
-    .post-title {
-      font-size: clamp(1rem, 3vw, 2.6rem);
-      font-weight: 900;
-      text-transform: uppercase;
-      letter-spacing: 0.12em;
-      color: #00cc44;
-      line-height: 1;
+    .post-title { font-size: 38px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; color: #00cc44; line-height: 1; }
+    .post-sub   { font-size: 14px; color: rgba(255,255,255,0.5); font-weight: 500; text-transform: uppercase; letter-spacing: 0.10em; margin-top: 4px; }
+
+    /* ── TITLE BAR ── */
+    #title-bar {
+      height: 75px; background: #000;
+      display: flex; align-items: stretch;
     }
-    .post-sub {
-      font-size: clamp(0.55rem, 1vw, 0.88rem);
-      color: rgba(255,255,255,0.50);
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.10em;
-      margin-top: 0.25rem;
+    .tb-logo {
+      width: 250px; flex-shrink: 0; background: #fff;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .tb-logo img { height: 45px; width: auto; max-width: 230px; }
+    .tb-text {
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; font-weight: 700; font-size: 36px;
+      overflow: hidden; white-space: nowrap;
+    }
+    #event-name { flex: 55 1 0; }
+    #match-info { flex: 45 1 0; }
+    .tb-divider { width: 3px; flex-shrink: 0; background: #fff; }
+
+    /* ── SCORE BAR ── */
+    #score-bar { height: 180px; position: relative; }
+
+    /* Half backgrounds: dark base + bright accent polygon
+       (22px strip along the top + 225px block beside the timer) */
+    .bg-half { position: absolute; top: 0; height: 180px; width: 960px; overflow: hidden; }
+    .bg-red  { left: 0;     background: #830E12; }
+    .bg-blue { left: 960px; background: #004172; }
+    .bg-red  svg { position: absolute; left: 0;  top: 0; }
+    .bg-blue svg { position: absolute; right: 0; top: 0; }
+
+    /* ── SCORE PILLS ── */
+    .pill-col {
+      position: absolute; top: 43px; width: 175px;
+      display: flex; flex-direction: column; gap: 16px;
+    }
+    .pill-col.red-side  { left: 29.8px; }
+    .pill-col.blue-side { left: 1715.2px; }
+
+    .score-pill {
+      background: #fff; height: 50px;
+      display: flex; overflow: hidden;
+    }
+    .pill-label {
+      width: 50px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .red-accent  { background: #ED1C24; }
+    .blue-accent { background: #0066B3; }
+
+    .robot-svg { width: 40px; height: 40px; fill: #fff; }
+
+    .pill-value {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      font-size: 42px; font-weight: 700; color: #000;
+    }
+    .card-x {
+      width: 52.5px; height: 42px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 42px; font-weight: 700; color: #000; line-height: 1;
+    }
+    .card-x svg { width: 26.25px; height: 42px; fill: #000; }
+    .card-x.yc { color: #c8a000; }
+    .card-x.rc { color: #cc0000; }
+
+    .mini-motif { display: flex; gap: 2px; align-items: center; justify-content: center; }
+    .mini-motif img { width: 14px; height: 14px; }
+
+    /* ── SUB-SCORE PILL (auto / teleop with shared goal cell) ── */
+    .sub-pill {
+      position: absolute; top: 51px;
+      width: 210.7px; height: 100px;
+      background: #fff; display: flex; overflow: hidden;
+    }
+    .sub-pill.red-side  { left: 234.5px; }
+    .sub-pill.blue-side { left: 1474.8px; }
+
+    .sub-label {
+      width: 50px; flex-shrink: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+    }
+    .sub-icon {
+      width: 40px; height: 50px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .arrow-svg { width: 40px; height: 35px; fill: #fff; }
+    .sub-icon img { width: 40px; height: 39px; }
+
+    .sub-values { width: 80px; flex-shrink: 0; display: flex; flex-direction: column; }
+    .sub-row {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      padding: 0 10px;
+      font-size: 42px; font-weight: 700; color: #000;
+      font-variant-numeric: tabular-nums; line-height: 1;
+    }
+    .sub-row:first-child { border-bottom: 2px solid #000; }
+
+    .goal {
+      width: 80.7px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; font-size: 34px; font-weight: 700; line-height: 1;
+    }
+
+    /* ── TEAM NUMBERS ── */
+    .team-col {
+      position: absolute; top: 22px; width: 150px;
+      display: flex; flex-direction: column; gap: 2px;
+    }
+    .team-col.red-side  { left: 485px; }
+    .team-col.blue-side { left: 1285px; }
+    .team-num {
+      height: 78px; background: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 40px; font-weight: 700; color: #000;
+      font-variant-numeric: tabular-nums; line-height: 46px;
+    }
+
+    /* ── ALLIANCE LABEL + TOTAL ── */
+    .alliance-block { position: absolute; top: 0; width: 225px; height: 180px; }
+    .alliance-block.red-side  { left: 635px; }
+    .alliance-block.blue-side { left: 1060px; }
+    .a-label {
+      margin-top: 36px; height: 30px;
+      font-size: 30px; font-weight: 700; color: #EDEDED;
+      text-align: center; line-height: 30px;
+    }
+    .a-score {
+      margin-top: 4px; height: 112px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 90px; font-weight: 700; color: #EDEDED;
+      font-variant-numeric: tabular-nums; line-height: 1;
+    }
+    .alliance-block.winner .a-score { text-shadow: 0 0 20px rgba(255,255,255,0.4); }
+
+    /* ── TIMER PANEL ── */
+    #timer-panel {
+      position: absolute; left: 857.5px; top: 0;
+      width: 205px; height: 180px;
+      background: #fff; text-align: center;
+    }
+    #period-label {
+      position: absolute; top: 14px; left: 0; right: 0;
+      font-size: 15px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.1em; color: #aaa; line-height: 1;
+    }
+    #timer-display {
+      display: block; padding-top: 50px;
+      font-size: 90px; line-height: 90px; font-weight: 700;
+      color: #000; font-variant-numeric: tabular-nums;
+    }
+    #timer-display.endgame { color: #b86a00; }
+
+    /* ── MOTIF ARTIFACTS (under timer) ── */
+    #motif-dots {
+      position: absolute; top: 140px; left: 0; right: 0; height: 35px;
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+    }
+    .motif-d { width: 35.6px; height: 35px; flex-shrink: 0; }
+    .motif-d-empty {
+      width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+      background: rgba(0,0,0,0.12); border: 1px solid rgba(0,0,0,0.18);
+    }
+
+    /* ── RP GOAL CELL STATES ── */
+    .goal.rp1 {
+      background: #aaaaaa !important;
+      color: #111 !important;
+      transition: background 0.3s;
+    }
+    .goal.rp2 {
+      background: #FFD700 !important;
+      color: #111 !important;
+      transition: background 0.3s;
     }
   </style>
 </head>
 <body>
+<div id="motif-reveal">
+  <div class="motif-card">
+    <div id="reveal-balls"></div>
+    <div id="reveal-label">MOTIF</div>
+  </div>
+</div>
+
 <div id="overlay">
 
-  <!-- Post-match banner (positioned above bar via absolute) -->
   <div id="post-banner">
     <div class="post-title">Match Complete</div>
     <div id="post-sub" class="post-sub">Final Score</div>
   </div>
 
-  <!-- Thin event info strip -->
-  <div id="top-strip">
-    <div id="event-name">—</div>
-    <div id="match-info">—</div>
+  <!-- ── TITLE BAR ── -->
+  <div id="title-bar">
+    <div class="tb-logo"><img src="/img/logo-first-age.svg" alt="FIRST AGE"></div>
+    <div class="tb-text" id="event-name">&#x2014;</div>
+    <div class="tb-divider"></div>
+    <div class="tb-text" id="match-info">&#x2014;</div>
+    <div class="tb-logo"><img src="/img/logo-decode.svg" alt="DECODE presented by RTX"></div>
   </div>
 
-  <!-- Main scoreboard bar -->
-  <div id="score-bar" class="waiting">
+  <!-- ── SCORE BAR ── -->
+  <div id="score-bar">
 
-    <!-- ═══ BLUE ALLIANCE (left → center) ═══ -->
-
-    <!-- Card / penalty column -->
-    <div class="outer-col blue-outer">
-      <div id="blue-card-box" class="card-box none">—</div>
-      <div id="blue-foul" class="foul-tally">0</div>
+    <!-- Half backgrounds with bright accent polygons -->
+    <div class="bg-half bg-red">
+      <svg width="862" height="180"><polygon points="0,0 862,0 862,180 637,180 637,22 0,22" fill="#ED1C24"/></svg>
+    </div>
+    <div class="bg-half bg-blue">
+      <svg width="862" height="180"><polygon points="0,0 862,0 862,22 225,22 225,180 0,180" fill="#0066B3"/></svg>
     </div>
 
-    <!-- Auto / teleop sub-scores -->
-    <div class="sub-col blue-sub">
-      <div class="sub-row">
-        <span class="sub-arrow">→</span>
-        <span id="blue-auto" class="sub-val">0</span>
+    <!-- RED robot / foul pills -->
+    <div class="pill-col red-side">
+      <div class="score-pill">
+        <div class="pill-label red-accent">
+          <svg class="robot-svg" viewBox="0 0 640 512"><path d="M9.375 233.4C3.375 239.4 0 247.5 0 256v128c0 8.5 3.375 16.62 9.375 22.62S23.5 416 32 416h32V224H32C23.5 224 15.38 227.4 9.375 233.4zM464 96H352V32c0-17.62-14.38-32-32-32S288 14.38 288 32v64H176C131.8 96 96 131.8 96 176V448c0 35.38 28.62 64 64 64h320c35.38 0 64-28.62 64-64V176C544 131.8 508.3 96 464 96zM256 416H192v-32h64V416zM224 296C201.9 296 184 278.1 184 256S201.9 216 224 216S264 233.9 264 256S246.1 296 224 296zM352 416H288v-32h64V416zM448 416h-64v-32h64V416zM416 296c-22.12 0-40-17.88-40-40S393.9 216 416 216S456 233.9 456 256S438.1 296 416 296zM630.6 233.4C624.6 227.4 616.5 224 608 224h-32v192h32c8.5 0 16.62-3.375 22.62-9.375S640 392.5 640 384V256C640 247.5 636.6 239.4 630.6 233.4z"/></svg>
+        </div>
+        <div class="pill-value">
+          <span class="card-x" id="red-ycard"></span><span class="card-x" id="red-rcard"></span>
+        </div>
       </div>
-      <div class="sub-row">
-        <span class="sub-arrow">→</span>
-        <span id="blue-teleop" class="sub-val">0</span>
+      <div class="score-pill">
+        <div class="pill-label red-accent">
+          <div class="mini-motif">
+            <img src="/img/artifact-white.svg" alt=""><img src="/img/artifact-white.svg" alt=""><img src="/img/artifact-white.svg" alt="">
+          </div>
+        </div>
+        <div class="pill-value"><span id="red-foul">0</span></div>
       </div>
+    </div>
+
+    <!-- RED auto / teleop sub-scores -->
+    <div class="sub-pill red-side">
+      <div class="sub-label red-accent">
+        <div class="sub-icon">
+          <svg class="arrow-svg" viewBox="0 0 448 512"><path fill="#fff" d="M438.6 278.6l-160 160C272.4 444.9 264.2 448 256 448s-16.38-3.125-22.62-9.375c-12.5-12.5-12.5-32.75 0-45.25L338.8 288H32C14.33 288 .0016 273.7 .0016 256S14.33 224 32 224h306.8l-105.4-105.4c-12.5-12.5-12.5-32.75 0-45.25s32.75-12.5 45.25 0l160 160C451.1 245.9 451.1 266.1 438.6 278.6z"/></svg>
+        </div>
+        <div class="sub-icon"><img src="/img/artifact-white.svg" alt=""></div>
+      </div>
+      <div class="sub-values">
+        <div class="sub-row"><span id="red-auto">0</span></div>
+        <div class="sub-row"><span id="red-teleop">0</span></div>
+      </div>
+      <div class="goal red-accent" id="red-goal"></div>
     </div>
 
     <!-- Team numbers -->
-    <div id="blue-teams" class="teams-col"></div>
+    <div class="team-col red-side">
+      <div class="team-num" id="red-t1">&#x2014;</div>
+      <div class="team-num" id="red-t2">&#x2014;</div>
+    </div>
+    <div class="team-col blue-side">
+      <div class="team-num" id="blue-t1">&#x2014;</div>
+      <div class="team-num" id="blue-t2">&#x2014;</div>
+    </div>
 
-    <!-- Alliance label + score -->
-    <div class="score-block blue-block" id="blue-panel">
+    <!-- Alliance totals -->
+    <div class="alliance-block red-side" id="red-panel">
+      <div class="a-label">Red</div>
+      <div class="a-score" id="red-score">0</div>
+    </div>
+    <div class="alliance-block blue-side" id="blue-panel">
       <div class="a-label">Blue</div>
       <div class="a-score" id="blue-score">0</div>
     </div>
 
-    <!-- ═══ CENTER ═══ -->
-    <div id="center-panel">
-      <div id="period-label">—</div>
-      <div id="timer-display">—</div>
-      <div id="rp-dots"></div>
+    <!-- Timer -->
+    <div id="timer-panel">
+      <div id="period-label"></div>
+      <span id="timer-display">0:00</span>
+      <div id="motif-dots"></div>
     </div>
 
-    <!-- ═══ RED ALLIANCE (center → right) ═══ -->
-
-    <!-- Alliance label + score -->
-    <div class="score-block red-block" id="red-panel">
-      <div class="a-label">Red</div>
-      <div class="a-score" id="red-score">0</div>
-    </div>
-
-    <!-- Team numbers -->
-    <div id="red-teams" class="teams-col"></div>
-
-    <!-- Auto / teleop sub-scores -->
-    <div class="sub-col red-sub">
-      <div class="sub-row">
-        <span class="sub-arrow">→</span>
-        <span id="red-auto" class="sub-val">0</span>
+    <!-- BLUE auto / teleop sub-scores (mirrored: goal cell toward center) -->
+    <div class="sub-pill blue-side">
+      <div class="sub-label blue-accent">
+        <div class="sub-icon">
+          <svg class="arrow-svg" viewBox="0 0 448 512"><path fill="#fff" d="M438.6 278.6l-160 160C272.4 444.9 264.2 448 256 448s-16.38-3.125-22.62-9.375c-12.5-12.5-12.5-32.75 0-45.25L338.8 288H32C14.33 288 .0016 273.7 .0016 256S14.33 224 32 224h306.8l-105.4-105.4c-12.5-12.5-12.5-32.75 0-45.25s32.75-12.5 45.25 0l160 160C451.1 245.9 451.1 266.1 438.6 278.6z"/></svg>
+        </div>
+        <div class="sub-icon"><img src="/img/artifact-white.svg" alt=""></div>
       </div>
-      <div class="sub-row">
-        <span class="sub-arrow">→</span>
-        <span id="red-teleop" class="sub-val">0</span>
+      <div class="sub-values">
+        <div class="sub-row"><span id="blue-auto">0</span></div>
+        <div class="sub-row"><span id="blue-teleop">0</span></div>
       </div>
+      <div class="goal blue-accent" id="blue-goal"></div>
     </div>
 
-    <!-- Card / penalty column -->
-    <div class="outer-col red-outer">
-      <div id="red-card-box" class="card-box none">—</div>
-      <div id="red-foul" class="foul-tally">0</div>
+    <!-- BLUE robot / foul pills -->
+    <div class="pill-col blue-side">
+      <div class="score-pill">
+        <div class="pill-label blue-accent">
+          <svg class="robot-svg" viewBox="0 0 640 512"><path d="M9.375 233.4C3.375 239.4 0 247.5 0 256v128c0 8.5 3.375 16.62 9.375 22.62S23.5 416 32 416h32V224H32C23.5 224 15.38 227.4 9.375 233.4zM464 96H352V32c0-17.62-14.38-32-32-32S288 14.38 288 32v64H176C131.8 96 96 131.8 96 176V448c0 35.38 28.62 64 64 64h320c35.38 0 64-28.62 64-64V176C544 131.8 508.3 96 464 96zM256 416H192v-32h64V416zM224 296C201.9 296 184 278.1 184 256S201.9 216 224 216S264 233.9 264 256S246.1 296 224 296zM352 416H288v-32h64V416zM448 416h-64v-32h64V416zM416 296c-22.12 0-40-17.88-40-40S393.9 216 416 216S456 233.9 456 256S438.1 296 416 296zM630.6 233.4C624.6 227.4 616.5 224 608 224h-32v192h32c8.5 0 16.62-3.375 22.62-9.375S640 392.5 640 384V256C640 247.5 636.6 239.4 630.6 233.4z"/></svg>
+        </div>
+        <div class="pill-value">
+          <span class="card-x" id="blue-ycard"></span><span class="card-x" id="blue-rcard"></span>
+        </div>
+      </div>
+      <div class="score-pill">
+        <div class="pill-label blue-accent">
+          <div class="mini-motif">
+            <img src="/img/artifact-white.svg" alt=""><img src="/img/artifact-white.svg" alt=""><img src="/img/artifact-white.svg" alt="">
+          </div>
+        </div>
+        <div class="pill-value"><span id="blue-foul">0</span></div>
+      </div>
     </div>
 
   </div><!-- #score-bar -->
@@ -380,147 +382,192 @@
 <script src="/js/common.js"></script>
 <script>
 (function () {
-  var bar        = document.getElementById('score-bar');
-  var timerEl    = document.getElementById('timer-display');
-  var periodEl   = document.getElementById('period-label');
-  var rpDotsEl   = document.getElementById('rp-dots');
-  var blueScore  = document.getElementById('blue-score');
-  var redScore   = document.getElementById('red-score');
-  var blueTeams  = document.getElementById('blue-teams');
-  var redTeams   = document.getElementById('red-teams');
-  var blueAuto   = document.getElementById('blue-auto');
-  var blueTeleop = document.getElementById('blue-teleop');
-  var redAuto    = document.getElementById('red-auto');
-  var redTeleop  = document.getElementById('red-teleop');
-  var blueCard   = document.getElementById('blue-card-box');
-  var blueFoul   = document.getElementById('blue-foul');
-  var redCard    = document.getElementById('red-card-box');
-  var redFoul    = document.getElementById('red-foul');
-  var bluePanel  = document.getElementById('blue-panel');
-  var redPanel   = document.getElementById('red-panel');
-  var postBanner = document.getElementById('post-banner');
-  var postSub    = document.getElementById('post-sub');
-  var eventNameEl= document.getElementById('event-name');
-  var matchInfoEl= document.getElementById('match-info');
+  'use strict';
+
+  var timerEl     = document.getElementById('timer-display');
+  var periodEl    = document.getElementById('period-label');
+  var blueScore   = document.getElementById('blue-score');
+  var redScore    = document.getElementById('red-score');
+  var blueAuto    = document.getElementById('blue-auto');
+  var blueTeleop  = document.getElementById('blue-teleop');
+  var redAuto     = document.getElementById('red-auto');
+  var redTeleop   = document.getElementById('red-teleop');
+  var blueFoul    = document.getElementById('blue-foul');
+  var redFoul     = document.getElementById('red-foul');
+  var blueYcard   = document.getElementById('blue-ycard');
+  var blueRcard   = document.getElementById('blue-rcard');
+  var redYcard    = document.getElementById('red-ycard');
+  var redRcard    = document.getElementById('red-rcard');
+  var bluePanel   = document.getElementById('blue-panel');
+  var redPanel    = document.getElementById('red-panel');
+  var postBanner  = document.getElementById('post-banner');
+  var postSub     = document.getElementById('post-sub');
+  var eventNameEl = document.getElementById('event-name');
+  var matchInfoEl = document.getElementById('match-info');
+  var motifDotsEl = document.getElementById('motif-dots');
+  var redT1       = document.getElementById('red-t1');
+  var redT2       = document.getElementById('red-t2');
+  var blueT1      = document.getElementById('blue-t1');
+  var blueT2      = document.getElementById('blue-t2');
+  var overlayEl   = document.getElementById('overlay');
 
   var matchActive  = false;
   var totalMatches = 0;
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
+  // RP goal cell elements
+  var redGoal  = document.getElementById('red-goal');
+  var blueGoal = document.getElementById('blue-goal');
 
-  function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); }
+  // Ball RP thresholds (loaded from settings — no hardcoded fallbacks)
+  var ballRpT1 = null;
+  var ballRpT2 = null;
 
-  function setState(s) {
-    bar.classList.remove('waiting', 'active', 'complete');
-    bar.classList.add(s);
+  var motifRevealEl  = document.getElementById('motif-reveal');
+  var revealBallsEl  = document.getElementById('reveal-balls');
+  var revealLabelEl  = document.getElementById('reveal-label');
+  var revealTimer    = null;
+
+  // ── Overlay scaling (1920×1080 design canvas → viewport) ──────────────────
+  function fitOverlay() {
+    overlayEl.style.transform = 'scale(' + (window.innerWidth / 1920) + ')';
+  }
+  window.addEventListener('resize', fitOverlay);
+  fitOverlay();
+
+  // ── Artifact ball images ───────────────────────────────────────────────────
+  var ARTIFACT_SRC = {
+    G: '/img/artifact-green.svg',
+    P: '/img/artifact-purple.svg',
+    W: '/img/artifact-white.svg'
+  };
+
+  function artifactImg(ch, cssClass) {
+    var img = document.createElement('img');
+    img.src = ARTIFACT_SRC[ch] || ARTIFACT_SRC.W;
+    img.alt = '';
+    if (cssClass) img.className = cssClass;
+    return img;
   }
 
-  // ── Teams ──────────────────────────────────────────────────────────────────
+  // FontAwesome 6 xmark, shown when an alliance has no card of that color
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+  function makeXmark() {
+    var svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 320 512');
+    var path = document.createElementNS(SVG_NS, 'path');
+    path.setAttribute('d', 'M310.6 361.4c12.5 12.5 12.5 32.75 0 45.25C304.4 412.9 296.2 416 288 416s-16.38-3.125-22.62-9.375L160 301.3 54.63 406.6C48.38 412.9 40.19 416 32 416s-16.38-3.125-22.62-9.375c-12.5-12.5-12.5-32.75 0-45.25l105.4-105.4L9.375 150.6c-12.5-12.5-12.5-32.75 0-45.25s32.75-12.5 45.25 0L160 210.8l105.4-105.4c12.5-12.5 32.75-12.5 45.25 0s12.5 32.75 0 45.25l-105.4 105.4L310.6 361.4z');
+    svg.appendChild(path);
+    return svg;
+  }
 
-  function setTeams(col, nums) {
-    clear(col);
-    (nums || []).forEach(function (n) {
-      var d = document.createElement('div');
-      d.className = 'team-num';
-      d.textContent = n;
-      col.appendChild(d);
+  // ── Motif rendering (artifact row under the timer) ─────────────────────────
+  function renderDisplayMotif(motif) {
+    while (motifDotsEl.firstChild) motifDotsEl.removeChild(motifDotsEl.firstChild);
+    if (!motif) {
+      for (var i = 0; i < 3; i++) {
+        var e = document.createElement('div'); e.className = 'motif-d-empty';
+        motifDotsEl.appendChild(e);
+      }
+      return;
+    }
+    motif.split('').forEach(function (ch) {
+      motifDotsEl.appendChild(artifactImg(ch, 'motif-d'));
     });
   }
 
-  // ── Card box ───────────────────────────────────────────────────────────────
+  // ── Motif reveal overlay ───────────────────────────────────────────────────
+  function showMotifReveal(motif) {
+    while (revealBallsEl.firstChild) revealBallsEl.removeChild(revealBallsEl.firstChild);
+    motif.split('').forEach(function (ch) {
+      revealBallsEl.appendChild(artifactImg(ch, 'reveal-ball'));
+    });
+    revealLabelEl.textContent = 'MOTIF: ' + motif;
+    motifRevealEl.classList.add('visible');
+    if (revealTimer) clearTimeout(revealTimer);
+    revealTimer = setTimeout(function() {
+      motifRevealEl.classList.remove('visible');
+      revealTimer = null;
+    }, 3000);
+  }
 
-  function renderCardBox(box, foulEl, scoreObj) {
-    // Show highest-priority card, foul count below
+  // ── Cards ──────────────────────────────────────────────────────────────────
+  function setCard(el, count, cls) {
+    while (el.firstChild) el.removeChild(el.firstChild);
+    if (count > 0) {
+      el.textContent = count;
+      el.className = 'card-x ' + cls;
+    } else {
+      el.appendChild(makeXmark());
+      el.className = 'card-x';
+    }
+  }
+
+  function renderCards(ycEl, rcEl, foulEl, scoreObj) {
     var yc = scoreObj && scoreObj.yellow_cards ? scoreObj.yellow_cards.length : 0;
     var rc = scoreObj && scoreObj.red_cards    ? scoreObj.red_cards.length    : 0;
-
-    box.className = 'card-box';
-    if (rc > 0) {
-      box.classList.add('red-c');
-      box.textContent = rc;
-    } else if (yc > 0) {
-      box.classList.add('yellow');
-      box.textContent = yc;
-    } else {
-      box.classList.add('none');
-      box.textContent = '—';
-    }
-
+    setCard(ycEl, yc, 'yc');
+    setCard(rcEl, rc, 'rc');
     foulEl.textContent = scoreObj && scoreObj.breakdown
-      ? Math.round((scoreObj.breakdown.penalty_pts || 0) / 5) // approximate foul count
-      : '0';
+      ? Math.round((scoreObj.breakdown.penalty_pts || 0) / 5) : '0';
   }
 
   // ── Sub-scores ─────────────────────────────────────────────────────────────
-
   function setSubScores(autoEl, teleopEl, scoreObj) {
     autoEl.textContent   = scoreObj && scoreObj.autoTotal   != null ? scoreObj.autoTotal   : '0';
     teleopEl.textContent = scoreObj && scoreObj.teleopTotal != null ? scoreObj.teleopTotal : '0';
   }
 
-  // ── RP dots ────────────────────────────────────────────────────────────────
-  // 3 blue dots (park/pattern/ball) | separator | 3 red dots
-
-  function renderRpDots(blueRp, redRp) {
-    clear(rpDotsEl);
-    var keys = ['parkRp', 'patternRp', 'ballRp'];
-
-    keys.forEach(function (k) {
-      var d = document.createElement('div');
-      d.className = 'rp-dot' + (blueRp && blueRp[k] ? ' lit-blue' : '');
-      rpDotsEl.appendChild(d);
-    });
-
-    var sep = document.createElement('div');
-    sep.className = 'rp-sep';
-    rpDotsEl.appendChild(sep);
-
-    keys.forEach(function (k) {
-      var d = document.createElement('div');
-      d.className = 'rp-dot' + (redRp && redRp[k] ? ' lit-green' : '');
-      rpDotsEl.appendChild(d);
-    });
+  // ── RP goal cell update ─────────────────────────────────────────────────────
+  function updateGoalCell(goalEl, rpData) {
+    goalEl.classList.remove('rp1', 'rp2');
+    var level = rpData ? (rpData.ballRp || 0) : 0;
+    if (level >= 2) {
+      goalEl.textContent = ballRpT2 != null ? '/' + ballRpT2 : '';
+      goalEl.classList.add('rp2');
+    } else if (level >= 1) {
+      goalEl.textContent = ballRpT2 != null ? '/' + ballRpT2 : '';
+      goalEl.classList.add('rp1');
+    } else {
+      goalEl.textContent = ballRpT1 != null ? '/' + ballRpT1 : '';
+    }
   }
 
   // ── Score update ───────────────────────────────────────────────────────────
-
   function applyScore(data) {
     if (!data) return;
     blueScore.textContent = data.blue && data.blue.total != null ? data.blue.total : '0';
     redScore.textContent  = data.red  && data.red.total  != null ? data.red.total  : '0';
     setSubScores(blueAuto, blueTeleop, data.blue);
     setSubScores(redAuto,  redTeleop,  data.red);
-    renderCardBox(blueCard, blueFoul, data.blue);
-    renderCardBox(redCard,  redFoul,  data.red);
-    renderRpDots(data.blueRP, data.redRP);
+    renderCards(blueYcard, blueRcard, blueFoul, data.blue);
+    renderCards(redYcard,  redRcard,  redFoul,  data.red);
+    updateGoalCell(redGoal,  data.redRP);
+    updateGoalCell(blueGoal, data.blueRP);
   }
 
   // ── State transitions ──────────────────────────────────────────────────────
-
   function goWaiting() {
     matchActive = false;
-    setState('waiting');
     postBanner.classList.remove('visible');
     bluePanel.classList.remove('winner');
     redPanel.classList.remove('winner');
-    periodEl.textContent = 'Waiting';
-    periodEl.className   = 'period-label';
-    timerEl.textContent  = '—';
-    timerEl.className    = 'timer-display';
-    blueScore.textContent = '0';
-    redScore.textContent  = '0';
-    blueAuto.textContent = '0'; blueTeleop.textContent = '0';
-    redAuto.textContent  = '0'; redTeleop.textContent  = '0';
-    blueCard.className = 'card-box none'; blueCard.textContent = '—';
-    redCard.className  = 'card-box none'; redCard.textContent  = '—';
-    blueFoul.textContent = '0'; redFoul.textContent = '0';
-    renderRpDots(null, null);
+    periodEl.textContent  = '';
+    timerEl.textContent   = '0:00';
+    timerEl.className     = '';
+    blueScore.textContent = '0'; redScore.textContent   = '0';
+    blueAuto.textContent  = '0'; blueTeleop.textContent = '0';
+    redAuto.textContent   = '0'; redTeleop.textContent  = '0';
+    setCard(blueYcard, 0); setCard(blueRcard, 0);
+    setCard(redYcard,  0); setCard(redRcard,  0);
+    blueFoul.textContent  = '0'; redFoul.textContent  = '0';
     matchInfoEl.textContent = '—';
+    renderDisplayMotif(null);
+    updateGoalCell(redGoal, null);
+    updateGoalCell(blueGoal, null);
   }
 
   function goActive(state) {
     matchActive = true;
-    setState('active');
     postBanner.classList.remove('visible');
     bluePanel.classList.remove('winner');
     redPanel.classList.remove('winner');
@@ -529,12 +576,9 @@
 
   function goComplete() {
     matchActive = false;
-    setState('complete');
     periodEl.textContent = 'Final';
-    periodEl.className   = 'period-label';
     timerEl.textContent  = '—';
-    timerEl.className    = 'timer-display';
-
+    timerEl.className    = '';
     var r = parseInt(redScore.textContent,  10) || 0;
     var b = parseInt(blueScore.textContent, 10) || 0;
     bluePanel.classList.remove('winner');
@@ -552,22 +596,17 @@
   }
 
   // ── Fetch helpers ──────────────────────────────────────────────────────────
-
   function fetchQueue() {
     fetch('/api/queue').then(function (r) { return r.ok ? r.json() : null; }).then(function (data) {
       if (!data) return;
       var m = data.onField;
       if (m) {
-        setTeams(blueTeams, [
-          m.blue1_team && m.blue1_team.number,
-          m.blue2_team && m.blue2_team.number
-        ].filter(Boolean));
-        setTeams(redTeams, [
-          m.red1_team  && m.red1_team.number,
-          m.red2_team  && m.red2_team.number
-        ].filter(Boolean));
-        matchInfoEl.textContent = 'Match ' + m.match_number +
-          (totalMatches ? ' of ' + totalMatches : '');
+        redT1.textContent  = (m.red1_team  && m.red1_team.number)  || '—';
+        redT2.textContent  = (m.red2_team  && m.red2_team.number)  || '—';
+        blueT1.textContent = (m.blue1_team && m.blue1_team.number) || '—';
+        blueT2.textContent = (m.blue2_team && m.blue2_team.number) || '—';
+        matchInfoEl.textContent = (m.phase === 'playoffs' ? 'Playoff ' : 'Qualification ') +
+          m.match_number + (totalMatches ? ' of ' + totalMatches : '');
       }
     }).catch(function () {});
   }
@@ -580,58 +619,58 @@
 
   function fetchEventName() {
     fetch('/api/settings').then(function (r) { return r.ok ? r.json() : null; }).then(function (s) {
-      if (s && s.event_name) eventNameEl.textContent = s.event_name;
+      if (!s) return;
+      if (s.event_name) eventNameEl.textContent = s.event_name;
+      ballRpT1 = parseFloat(s.rp_ball_threshold_1) || null;
+      ballRpT2 = parseFloat(s.rp_ball_threshold_2) || null;
+      redGoal.textContent  = '/' + ballRpT1;
+      blueGoal.textContent = '/' + ballRpT1;
     }).catch(function () {});
   }
 
   // ── Socket ─────────────────────────────────────────────────────────────────
-
   var socket = SK.connectSocket();
   if (socket) {
-    socket.on('timer_tick', function (state) {
-      if (!matchActive) return;
-      SK.applyTimerState(state, timerEl, null);
+    socket.on('timer_tick',    function (state) { if (!matchActive) return; SK.applyTimerState(state, timerEl, null); });
+    socket.on('period_change', function (state) { SK.applyTimerState(state, timerEl, periodEl); SK.playBuzzer(); });
+    socket.on('match_start',   function (state) { goActive(state); });
+    socket.on('match_end',     function ()      { goComplete(); });
+    socket.on('score_update',  function (data)  { applyScore(data); });
+    socket.on('match_loaded',  function (data)  {
+      fetchQueue(); fetchMatchCount();
+      matchActive = false;
+      SK.applyTimerState(data, timerEl, periodEl);
+      periodEl.textContent = 'Ready';
+      periodEl.className   = 'period-label';
     });
-
-    socket.on('period_change', function (state) {
-      SK.applyTimerState(state, timerEl, periodEl);
-      SK.playBuzzer();
-    });
-
-    socket.on('match_start', function (state) {
-      goActive(state);
-    });
-
-    socket.on('match_end', function () {
-      goComplete();
-    });
-
-    socket.on('score_update', function (data) {
-      applyScore(data);
-    });
-
-    socket.on('match_loaded', function () {
-      fetchQueue();
-      fetchMatchCount();
-    });
-
-    socket.on('match_abort', function () {
-      goWaiting();
-      fetchQueue();
-    });
-
-    socket.on('queue_update', function () {
-      fetchQueue();
-      fetchMatchCount();
+    socket.on('match_abort',   function ()      { goWaiting(); fetchQueue(); });
+    socket.on('queue_update',  function ()      { fetchQueue(); fetchMatchCount(); });
+    socket.on('motif_update',  function (data)  {
+      var motif = data && data.motif ? data.motif : null;
+      renderDisplayMotif(motif);
+      if (motif && data.reveal) showMotifReveal(motif);
     });
   }
 
+  function fetchTimerState() {
+    fetch('/api/timer').then(function (r) { return r.ok ? r.json() : null; }).then(function (state) {
+      if (!state || !state.matchId) { goWaiting(); return; }
+      if (state.matchEnded) { goComplete(); return; }
+      matchActive = !!(state.running && !state.paused);
+      SK.applyTimerState(state, timerEl, periodEl);
+      if (!state.running) {
+        periodEl.textContent = 'Ready';
+        periodEl.className   = 'period-label';
+      }
+    }).catch(function () { goWaiting(); });
+  }
+
   // ── Init ───────────────────────────────────────────────────────────────────
-  renderRpDots(null, null);
-  goWaiting();
+  renderDisplayMotif(null);
   fetchEventName();
   fetchQueue();
   fetchMatchCount();
+  fetchTimerState();
 })();
 </script>
 </body>
