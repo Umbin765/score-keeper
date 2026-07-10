@@ -115,6 +115,8 @@ function computeLiveRP(db, matchId, alliance) {
 
 /**
  * Build full rankings from all completed (committed) matches.
+ * Pass includeMatchId to also count one uncommitted match (provisional
+ * rankings for post-match rank-movement display). Never persisted.
  * Returns sorted array with rank assigned.
  */
 function updateRankings(db, includeMatchId = null) {
