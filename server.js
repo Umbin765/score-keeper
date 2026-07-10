@@ -350,7 +350,9 @@ app.post('/api/matches/:id/override', (req, res) => {
     return res.status(400).json({ error: 'Unknown field' });
   }
 
-  const current = db.prepare(`SELECT ${field} FROM match_scores WHERE match_id=? AND alliance=?`).get(matchId, alliance);
+  if (!['red', 'blue'].includes(alliance)) return res.status(400).json({ error: 'Unknown alliance' });
+
+  const current = db.prepare(`SELECT ${field}, committed FROM match_scores WHERE match_id=? AND alliance=?`).get(matchId, alliance);
 
   let stored;
   if (cardFields.includes(field)) {
@@ -369,8 +371,7 @@ app.post('/api/matches/:id/override', (req, res) => {
   broadcastScores(matchId);
 
   // Editing an already-committed match must re-run rankings
-  const committed = db.prepare('SELECT committed FROM match_scores WHERE match_id=? AND alliance=?').get(matchId, alliance);
-  if (committed && committed.committed === 1) {
+  if (current && current.committed === 1) {
     io.emit('rankings_update', updateRankings(db));
   }
 
@@ -673,6 +674,7 @@ io.on('connection', (socket) => {
 
   socket.on('score_increment', ({ matchId, alliance, field }) => {
     if (!timer.matchId || timer.matchId !== matchId) return;
+    if (!['red', 'blue'].includes(alliance)) return;
 
     const autoFields = ['auto_classified','auto_overflow','auto_pattern'];
     const teleopFields = ['teleop_classified','teleop_overflow','teleop_balls'];
@@ -697,6 +699,7 @@ io.on('connection', (socket) => {
   // Boolean toggle fields (auto_leave_r1, auto_leave_r2)
   socket.on('score_set', ({ matchId, alliance, field, value }) => {
     if (!timer.matchId || timer.matchId !== matchId) return;
+    if (!['red', 'blue'].includes(alliance)) return;
     if (!timer.matchEnded) {
       if (!timer.running) return;
       const period = timer.currentPeriod;
@@ -750,6 +753,11 @@ io.on('connection', (socket) => {
 
   socket.on('score_decrement', ({ matchId, alliance, field }) => {
     if (!timer.matchId || timer.matchId !== matchId) return;
+    if (!['red', 'blue'].includes(alliance)) return;
+    // Whitelist before SQL interpolation (field is spliced into the query below)
+    const decFields = ['auto_classified','auto_overflow','auto_pattern',
+      'teleop_classified','teleop_overflow','teleop_balls'];
+    if (!decFields.includes(field)) return;
     if (!timer.matchEnded) {
       const period = timer.currentPeriod;
       if (!period || ['TRANSITION','BUZZER'].includes(period.type)) return;
