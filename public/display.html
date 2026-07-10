@@ -675,8 +675,8 @@
       var r = document.createElement('span');
       r.textContent = t.rank != null ? t.rank : '\u2014';
       var arr = document.createElement('span');
-      arr.className = 'arr ' + (t.delta != null && t.delta < 0 ? 'down' : t.delta === 0 ? '' : 'up');
-      arr.textContent = t.delta == null || t.delta > 0 ? '\u2191' : t.delta < 0 ? '\u2193' : '\u2014';
+      arr.className = 'arr ' + (t.delta == null || t.delta === 0 ? '' : t.delta < 0 ? 'down' : 'up');
+      arr.textContent = t.delta == null || t.delta === 0 ? '\u2014' : t.delta > 0 ? '\u2191' : '\u2193';
       rank.appendChild(r);
       rank.appendChild(arr);
       pill.appendChild(num);
@@ -1020,6 +1020,11 @@
     });
     socket.on('scores_reveal', function (data)  {
       reviewing = false;
+      // Scores were frozen during review — sync the overlay with the revealed totals
+      if (data && data.red && data.blue) {
+        redScore.textContent  = data.red.total;
+        blueScore.textContent = data.blue.total;
+      }
       goComplete();
       playWinnerAnimation(data && data.winner ? data.winner : 'tie', function () {
         if (data) showResultsScreen(data);
