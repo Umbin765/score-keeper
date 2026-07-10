@@ -26,6 +26,7 @@ class MatchTimer {
     this.paused = false;
     this.endgameCycle = 0;
     this.matchEnded = false;
+    this.scoresRevealed = false;
   }
 
   /** Load a match and its period sequence. Does NOT start the timer. */
@@ -54,6 +55,7 @@ class MatchTimer {
       endgameCycle: this.endgameCycle,
       totalPeriods: this.periods.length,
       matchEnded: this.matchEnded,
+      scoresRevealed: this.scoresRevealed,
     };
   }
 
@@ -154,6 +156,7 @@ class MatchTimer {
 
     this.running = false;
     this.matchEnded = true;
+    this.scoresRevealed = false;
     this.io.emit('match_end', { matchId: this.matchId, state: this.getState() });
   }
 }
