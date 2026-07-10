@@ -93,6 +93,7 @@ function computeLiveRP(db, matchId, alliance) {
   let winLossRp = 0;
   if (myScore > oppScore) winLossRp = parseFloat(settings.rp_win);
   else if (myScore === oppScore) winLossRp = parseFloat(settings.rp_tie);
+  else winLossRp = parseFloat(settings.rp_loss);
 
   const parkScore = calculateParkScore(db, matchId, alliance);
   let parkRp = 0;
@@ -116,7 +117,7 @@ function computeLiveRP(db, matchId, alliance) {
  * Build full rankings from all completed (committed) matches.
  * Returns sorted array with rank assigned.
  */
-function updateRankings(db) {
+function updateRankings(db, includeMatchId = null) {
   const teams = db.prepare('SELECT * FROM teams ORDER BY number').all();
   const settings = getSettingsMap(db);
   const rankings = [];
@@ -125,11 +126,14 @@ function updateRankings(db) {
     const teamMatches = db.prepare(`
       SELECT m.*
       FROM matches m
-      JOIN match_scores ms ON ms.match_id = m.id AND ms.alliance IN ('red','blue') AND ms.committed = 1
       WHERE (m.red1 = ? OR m.red2 = ? OR m.blue1 = ? OR m.blue2 = ?)
-        AND m.state = 'COMPLETED'
-      GROUP BY m.id
-    `).all(team.id, team.id, team.id, team.id);
+        AND (
+          (m.state = 'COMPLETED' AND EXISTS (
+            SELECT 1 FROM match_scores ms WHERE ms.match_id = m.id AND ms.committed = 1
+          ))
+          OR m.id = ?
+        )
+    `).all(team.id, team.id, team.id, team.id, includeMatchId ?? -1);
 
     let totalRp = 0, wins = 0, losses = 0, ties = 0, scoreList = [], highScore = 0;
     const rpBreakdown = [];
