@@ -8,6 +8,10 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
   <style>
+    @font-face { font-family: 'Barlow Condensed'; font-weight: 700; font-style: normal;
+      src: url('/fonts/BarlowCondensed-700.woff2') format('woff2'); font-display: swap; }
+    @font-face { font-family: 'Barlow Condensed'; font-weight: 800; font-style: normal;
+      src: url('/fonts/BarlowCondensed-800.woff2') format('woff2'); font-display: swap; }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html, body {
       width: 100vw; height: 100vh;
@@ -243,6 +247,40 @@
       color: #111 !important;
       transition: background 0.3s;
     }
+    /* ── WINNER ANIMATION ── */
+    #winner-anim {
+      position: fixed; inset: 0; z-index: 90;
+      display: flex; align-items: center; justify-content: center;
+      background: radial-gradient(ellipse at 50% 70%, #2a2015 0%, #14100a 55%, #0a0806 100%);
+      opacity: 0; pointer-events: none; transition: opacity 0.4s ease;
+    }
+    #winner-anim.visible { opacity: 1; pointer-events: auto; }
+    #pyr { width: min(56vw, 62vh); height: auto; }
+    #pyr .tier { fill: none; stroke: var(--win-color, #888); stroke-width: 3;
+      filter: drop-shadow(0 0 10px var(--win-color, #888)); }
+    #pyr-solid .tier { fill: var(--win-color, #888); fill-opacity: 0.85; stroke: none; filter: none; }
+    #pyr-fill-rect { y: 560px; transition: y 2s cubic-bezier(0.25, 0.6, 0.3, 1); }
+    #winner-anim.filling #pyr-fill-rect { y: 0px; }
+    #win-banner {
+      position: absolute; left: 50%; top: 62%;
+      transform: translate(-50%, -50%) rotate(-4deg) scale(3);
+      background: var(--win-color, #888);
+      border: 6px solid rgba(0,0,0,0.35); border-radius: 12px;
+      padding: 1.2vh 5vw; opacity: 0;
+      box-shadow: 0 18px 60px rgba(0,0,0,0.6);
+    }
+    #winner-anim.banner-in #win-banner { animation: bannerSlam 0.45s cubic-bezier(0.2, 1.4, 0.4, 1) forwards; }
+    @keyframes bannerSlam {
+      from { opacity: 0; transform: translate(-50%, -50%) rotate(-4deg) scale(3); }
+      to   { opacity: 1; transform: translate(-50%, -50%) rotate(-4deg) scale(1); }
+    }
+    #win-banner-text {
+      font-family: 'Barlow Condensed', sans-serif; font-weight: 800;
+      font-size: clamp(48px, 9vw, 130px); line-height: 1.1;
+      color: #fff; text-transform: uppercase; letter-spacing: 0.02em; white-space: nowrap;
+      text-shadow: 0 4px 0 rgba(0,0,0,0.35), 0 0 2px rgba(0,0,0,0.5);
+      -webkit-text-stroke: 2px rgba(0,0,0,0.25);
+    }
   </style>
 </head>
 <body>
@@ -251,6 +289,28 @@
     <div id="reveal-balls"></div>
     <div id="reveal-label">MOTIF</div>
   </div>
+</div>
+<div id="winner-anim">
+  <svg id="pyr" viewBox="0 0 800 560" aria-hidden="true">
+    <defs>
+      <clipPath id="pyr-fill-clip"><rect id="pyr-fill-rect" x="0" y="560" width="800" height="560"/></clipPath>
+    </defs>
+    <g id="pyr-solid" clip-path="url(#pyr-fill-clip)">
+      <rect class="tier" x="60"  y="460" width="680" height="100"/>
+      <rect class="tier" x="140" y="360" width="520" height="100"/>
+      <rect class="tier" x="220" y="260" width="360" height="100"/>
+      <rect class="tier" x="300" y="160" width="200" height="100"/>
+      <rect class="tier" x="352" y="60"  width="96"  height="100"/>
+    </g>
+    <g id="pyr-outline">
+      <rect class="tier" x="60"  y="460" width="680" height="100"/>
+      <rect class="tier" x="140" y="360" width="520" height="100"/>
+      <rect class="tier" x="220" y="260" width="360" height="100"/>
+      <rect class="tier" x="300" y="160" width="200" height="100"/>
+      <rect class="tier" x="352" y="60"  width="96"  height="100"/>
+    </g>
+  </svg>
+  <div id="win-banner"><span id="win-banner-text"></span></div>
 </div>
 
 <div id="overlay">
@@ -550,6 +610,7 @@
 
   // ── State transitions ──────────────────────────────────────────────────────
   function goWaiting() {
+    hideWinnerAnim();
     reviewing = false;
     postBanner.classList.remove('post-banner--review');
     postBanner.querySelector('.post-title').textContent = 'Match Complete';
@@ -573,6 +634,7 @@
   }
 
   function goActive(state) {
+    hideWinnerAnim();
     reviewing = false;
     postBanner.classList.remove('post-banner--review');
     postBanner.querySelector('.post-title').textContent = 'Match Complete';
@@ -594,6 +656,35 @@
     postSub.textContent = 'Scores being finalized';
     postBanner.classList.add('visible');
   }
+
+  var winnerAnimEl = document.getElementById('winner-anim');
+  var winBannerText = document.getElementById('win-banner-text');
+  var winAnimTimers = [];
+
+  var WIN_COLORS = { red: '#ED1C24', blue: '#0066B3', tie: '#FFD700' };
+
+  function hideWinnerAnim() {
+    winAnimTimers.forEach(clearTimeout);
+    winAnimTimers = [];
+    winnerAnimEl.classList.remove('visible', 'filling', 'banner-in');
+  }
+
+  function playWinnerAnimation(winner, done) {
+    hideWinnerAnim();
+    winnerAnimEl.style.setProperty('--win-color', WIN_COLORS[winner] || WIN_COLORS.tie);
+    winBannerText.textContent = winner === 'tie' ? 'TIE!' : winner.toUpperCase() + ' WINS!';
+    winnerAnimEl.classList.add('visible');
+    SK.playBuzzer();
+    winAnimTimers.push(setTimeout(function () { winnerAnimEl.classList.add('filling'); }, 150));
+    winAnimTimers.push(setTimeout(function () { winnerAnimEl.classList.add('banner-in'); }, 2300));
+    winAnimTimers.push(setTimeout(function () {
+      if (done) done();                    // results screen fades in underneath (z-index 80 < 90)
+      winnerAnimEl.classList.remove('visible');
+    }, 4400));
+    winAnimTimers.push(setTimeout(hideWinnerAnim, 4900));
+  }
+
+  function showResultsScreen(results) { /* implemented in Task 9 */ }
 
   function goComplete() {
     reviewing = false;
@@ -660,8 +751,15 @@
     socket.on('match_start',   function (state) { goActive(state); });
     socket.on('match_end',     function ()      { goReview(); });
     socket.on('score_update',  function (data)  { if (reviewing) return; applyScore(data); });
-    socket.on('scores_reveal', function (data)  { reviewing = false; goComplete(); });
+    socket.on('scores_reveal', function (data)  {
+      reviewing = false;
+      goComplete();
+      playWinnerAnimation(data && data.winner ? data.winner : 'tie', function () {
+        if (data) showResultsScreen(data);
+      });
+    });
     socket.on('match_loaded',  function (data)  {
+      hideWinnerAnim();
       fetchQueue(); fetchMatchCount();
       matchActive = false;
       SK.applyTimerState(data, timerEl, periodEl);
