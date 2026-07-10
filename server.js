@@ -375,9 +375,11 @@ app.post('/api/matches/:id/reveal', (req, res) => {
   const matchId = Number(req.params.id);
   if (timer.matchId !== matchId) return res.status(409).json({ error: 'Match not loaded' });
   if (!timer.matchEnded) return res.status(409).json({ error: 'Match not ended yet' });
+  if (timer.scoresRevealed) return res.status(409).json({ error: 'Scores already revealed' });
 
-  timer.scoresRevealed = true;
   const results = buildResultsPayload(matchId);
+  if (!results) return res.status(404).json({ error: 'Match not found' });
+  timer.scoresRevealed = true;
   io.emit('scores_reveal', results);
   res.json({ ok: true });
 });
