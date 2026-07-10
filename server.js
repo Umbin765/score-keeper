@@ -338,21 +338,42 @@ app.post('/api/matches/:id/commit', (req, res) => {
   res.json({ ok: true, rankings });
 });
 
-// Override a score field (head ref)
+// Override a score field (head ref / match history editor)
 app.post('/api/matches/:id/override', (req, res) => {
   const matchId = Number(req.params.id);
   const { alliance, field, value, changedBy } = req.body;
 
-  const allowed = ['auto_classified','auto_overflow','auto_leave','auto_leave_r1','auto_leave_r2','auto_pattern',
-    'teleop_classified','teleop_overflow','teleop_balls'];
-  if (!allowed.includes(field)) return res.status(400).json({ error: 'Unknown field' });
+  const numericFields = ['auto_classified','auto_overflow','auto_leave','auto_leave_r1','auto_leave_r2','auto_pattern',
+    'teleop_classified','teleop_overflow','teleop_balls','teleop_pattern'];
+  const cardFields = ['yellow_cards','red_cards'];
+  if (!numericFields.includes(field) && !cardFields.includes(field)) {
+    return res.status(400).json({ error: 'Unknown field' });
+  }
 
   const current = db.prepare(`SELECT ${field} FROM match_scores WHERE match_id=? AND alliance=?`).get(matchId, alliance);
-  db.prepare(`UPDATE match_scores SET ${field}=? WHERE match_id=? AND alliance=?`).run(Number(value), matchId, alliance);
+
+  let stored;
+  if (cardFields.includes(field)) {
+    if (!Array.isArray(value) || !value.every((v) => Number.isInteger(v))) {
+      return res.status(400).json({ error: 'Card value must be an array of team numbers' });
+    }
+    stored = JSON.stringify(value);
+  } else {
+    stored = Number(value);
+  }
+
+  db.prepare(`UPDATE match_scores SET ${field}=? WHERE match_id=? AND alliance=?`).run(stored, matchId, alliance);
   db.prepare('INSERT INTO score_audit(match_id, alliance, field, old_value, new_value, changed_by) VALUES (?,?,?,?,?,?)')
-    .run(matchId, alliance, field, String(current ? current[field] : 0), String(value), changedBy || 'headref');
+    .run(matchId, alliance, field, String(current ? current[field] : 0), String(stored), changedBy || 'headref');
 
   broadcastScores(matchId);
+
+  // Editing an already-committed match must re-run rankings
+  const committed = db.prepare('SELECT committed FROM match_scores WHERE match_id=? AND alliance=?').get(matchId, alliance);
+  if (committed && committed.committed === 1) {
+    io.emit('rankings_update', updateRankings(db));
+  }
+
   res.json({ ok: true });
 });
 
