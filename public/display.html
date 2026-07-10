@@ -66,6 +66,8 @@
     #post-banner.visible { display: block; }
     .post-title { font-size: 38px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; color: #00cc44; line-height: 1; }
     .post-sub   { font-size: 14px; color: rgba(255,255,255,0.5); font-weight: 500; text-transform: uppercase; letter-spacing: 0.10em; margin-top: 4px; }
+    #post-banner.post-banner--review { border-color: #555; background: rgba(20,20,20,0.95); }
+    #post-banner.post-banner--review .post-title { color: #bbb; }
 
     /* ── TITLE BAR ── */
     #title-bar {
@@ -412,6 +414,7 @@
   var overlayEl   = document.getElementById('overlay');
 
   var matchActive  = false;
+  var reviewing    = false;
   var totalMatches = 0;
 
   // RP goal cell elements
@@ -547,6 +550,9 @@
 
   // ── State transitions ──────────────────────────────────────────────────────
   function goWaiting() {
+    reviewing = false;
+    postBanner.classList.remove('post-banner--review');
+    postBanner.querySelector('.post-title').textContent = 'Match Complete';
     matchActive = false;
     postBanner.classList.remove('visible');
     bluePanel.classList.remove('winner');
@@ -567,6 +573,9 @@
   }
 
   function goActive(state) {
+    reviewing = false;
+    postBanner.classList.remove('post-banner--review');
+    postBanner.querySelector('.post-title').textContent = 'Match Complete';
     matchActive = true;
     postBanner.classList.remove('visible');
     bluePanel.classList.remove('winner');
@@ -574,7 +583,22 @@
     if (state) SK.applyTimerState(state, timerEl, periodEl);
   }
 
+  function goReview() {
+    matchActive = false;
+    reviewing = true;
+    periodEl.textContent = 'Review';
+    timerEl.textContent = '—';
+    timerEl.className = '';
+    postBanner.classList.add('post-banner--review');
+    postBanner.querySelector('.post-title').textContent = 'Under Review';
+    postSub.textContent = 'Scores being finalized';
+    postBanner.classList.add('visible');
+  }
+
   function goComplete() {
+    reviewing = false;
+    postBanner.classList.remove('post-banner--review');
+    postBanner.querySelector('.post-title').textContent = 'Match Complete';
     matchActive = false;
     periodEl.textContent = 'Final';
     timerEl.textContent  = '—';
@@ -634,8 +658,9 @@
     socket.on('timer_tick',    function (state) { if (!matchActive) return; SK.applyTimerState(state, timerEl, null); });
     socket.on('period_change', function (state) { SK.applyTimerState(state, timerEl, periodEl); SK.playBuzzer(); });
     socket.on('match_start',   function (state) { goActive(state); });
-    socket.on('match_end',     function ()      { goComplete(); });
-    socket.on('score_update',  function (data)  { applyScore(data); });
+    socket.on('match_end',     function ()      { goReview(); });
+    socket.on('score_update',  function (data)  { if (reviewing) return; applyScore(data); });
+    socket.on('scores_reveal', function (data)  { reviewing = false; goComplete(); });
     socket.on('match_loaded',  function (data)  {
       fetchQueue(); fetchMatchCount();
       matchActive = false;
@@ -655,7 +680,20 @@
   function fetchTimerState() {
     fetch('/api/timer').then(function (r) { return r.ok ? r.json() : null; }).then(function (state) {
       if (!state || !state.matchId) { goWaiting(); return; }
-      if (state.matchEnded) { goComplete(); return; }
+      if (state.matchEnded && !state.scoresRevealed) {
+        fetch('/api/matches/' + state.matchId + '/scores')
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (d) { if (d) applyScore(Object.assign({ matchId: state.matchId }, d)); goReview(); })
+          .catch(function () { goReview(); });
+        return;
+      }
+      if (state.matchEnded && state.scoresRevealed) {
+        fetch('/api/matches/' + state.matchId + '/scores')
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (d) { if (d) applyScore(Object.assign({ matchId: state.matchId }, d)); goComplete(); })
+          .catch(function () { goComplete(); });
+        return;
+      }
       matchActive = !!(state.running && !state.paused);
       SK.applyTimerState(state, timerEl, periodEl);
       if (!state.running) {
