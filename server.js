@@ -673,17 +673,22 @@ io.on('connection', (socket) => {
 
   socket.on('score_increment', ({ matchId, alliance, field }) => {
     if (!timer.matchId || timer.matchId !== matchId) return;
-    if (!timer.running) return;
-    const period = timer.currentPeriod;
-    if (!period || period.type === 'BUZZER') return;
 
-    // Validate field belongs to current period type
     const autoFields = ['auto_classified','auto_overflow','auto_pattern'];
     const teleopFields = ['teleop_classified','teleop_overflow','teleop_balls'];
-    if (period.type === 'AUTO'        && !autoFields.includes(field)) return;
-    if (period.type === 'TRANSITION'  && field !== 'auto_pattern') return;
-    if (period.type === 'TELEOP'      && !teleopFields.includes(field)) return;
-    if (!['AUTO','TRANSITION','TELEOP','ENDGAME'].includes(period.type)) return;
+
+    if (timer.matchEnded) {
+      // Review phase: any score field may be corrected
+      if (![...autoFields, ...teleopFields].includes(field)) return;
+    } else {
+      if (!timer.running) return;
+      const period = timer.currentPeriod;
+      if (!period || period.type === 'BUZZER') return;
+      if (period.type === 'AUTO'        && !autoFields.includes(field)) return;
+      if (period.type === 'TRANSITION'  && field !== 'auto_pattern') return;
+      if (period.type === 'TELEOP'      && !teleopFields.includes(field)) return;
+      if (!['AUTO','TRANSITION','TELEOP','ENDGAME'].includes(period.type)) return;
+    }
 
     db.prepare(`UPDATE match_scores SET ${field}=${field}+1 WHERE match_id=? AND alliance=?`).run(matchId, alliance);
     broadcastScores(matchId);
@@ -692,10 +697,12 @@ io.on('connection', (socket) => {
   // Boolean toggle fields (auto_leave_r1, auto_leave_r2)
   socket.on('score_set', ({ matchId, alliance, field, value }) => {
     if (!timer.matchId || timer.matchId !== matchId) return;
-    if (!timer.running) return;
-    const period = timer.currentPeriod;
-    // Allow setting auto_leave during TRANSITION so scorers can correct it after AUTO ends
-    if (!period || period.type === 'BUZZER') return;
+    if (!timer.matchEnded) {
+      if (!timer.running) return;
+      const period = timer.currentPeriod;
+      // Allow setting auto_leave during TRANSITION so scorers can correct it after AUTO ends
+      if (!period || period.type === 'BUZZER') return;
+    }
 
     const setFields = ['auto_leave_r1', 'auto_leave_r2'];
     if (!setFields.includes(field)) return;
@@ -708,13 +715,19 @@ io.on('connection', (socket) => {
   // ── Pattern ball toggle ─────────────────────────────────────────────────
   socket.on('pattern_ball', ({ matchId, alliance, ballIdx, selected }) => {
     if (!timer.matchId || timer.matchId !== matchId) return;
-    if (!timer.running) return;
-    const period = timer.currentPeriod;
-    if (!period) return;
+    if (!timer.running && !timer.matchEnded) return;
     if (typeof ballIdx !== 'number' || ballIdx < 0 || ballIdx > 8) return;
     if (!['red', 'blue'].includes(alliance)) return;
 
-    if (period.type === 'TRANSITION') {
+    const period = timer.currentPeriod;
+    const grid = timer.matchEnded
+      ? 'teleop'                                          // review-phase edits target the teleop grid
+      : period && period.type === 'TRANSITION' ? 'auto'
+      : period && ['TELEOP','ENDGAME','BUZZER'].includes(period.type) ? 'teleop'
+      : null;
+    if (!grid) return;
+
+    if (grid === 'auto') {
       const row = db.prepare('SELECT pattern_balls FROM match_scores WHERE match_id=? AND alliance=?').get(matchId, alliance);
       const arr = (row?.pattern_balls || '000000000').split('');
       arr[ballIdx] = selected ? '1' : '0';
@@ -723,7 +736,7 @@ io.on('connection', (socket) => {
       db.prepare('UPDATE match_scores SET pattern_balls=?, auto_pattern=? WHERE match_id=? AND alliance=?')
         .run(newBalls, count, matchId, alliance);
       broadcastScores(matchId);
-    } else if (period.type === 'TELEOP' || period.type === 'ENDGAME' || period.type === 'BUZZER') {
+    } else {
       const row = db.prepare('SELECT teleop_pattern_balls FROM match_scores WHERE match_id=? AND alliance=?').get(matchId, alliance);
       const arr = (row?.teleop_pattern_balls || '000000000').split('');
       arr[ballIdx] = selected ? '1' : '0';
@@ -737,8 +750,10 @@ io.on('connection', (socket) => {
 
   socket.on('score_decrement', ({ matchId, alliance, field }) => {
     if (!timer.matchId || timer.matchId !== matchId) return;
-    const period = timer.currentPeriod;
-    if (!period || ['TRANSITION','BUZZER'].includes(period.type)) return;
+    if (!timer.matchEnded) {
+      const period = timer.currentPeriod;
+      if (!period || ['TRANSITION','BUZZER'].includes(period.type)) return;
+    }
 
     const cur = db.prepare(`SELECT ${field} FROM match_scores WHERE match_id=? AND alliance=?`).get(matchId, alliance);
     if (!cur || cur[field] <= 0) return;
@@ -751,8 +766,10 @@ io.on('connection', (socket) => {
 
   socket.on('park_update', ({ matchId, alliance, robot, status }) => {
     if (!timer.matchId || timer.matchId !== matchId) return;
-    const period = timer.currentPeriod;
-    if (!period || !['ENDGAME', 'BUZZER'].includes(period.type)) return;
+    if (!timer.matchEnded) {
+      const period = timer.currentPeriod;
+      if (!period || !['ENDGAME', 'BUZZER'].includes(period.type)) return;
+    }
 
     const cycle = timer.endgameCycle || 1;
     const col = robot === 1 ? 'r1_park' : 'r2_park';
