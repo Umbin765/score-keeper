@@ -370,6 +370,25 @@ app.post('/api/matches/:id/replay', (req, res) => {
   res.json({ ok: true });
 });
 
+// Reveal scores → winner animation + results screen on /display
+app.post('/api/matches/:id/reveal', (req, res) => {
+  const matchId = Number(req.params.id);
+  if (timer.matchId !== matchId) return res.status(409).json({ error: 'Match not loaded' });
+  if (!timer.matchEnded) return res.status(409).json({ error: 'Match not ended yet' });
+
+  timer.scoresRevealed = true;
+  const results = buildResultsPayload(matchId);
+  io.emit('scores_reveal', results);
+  res.json({ ok: true });
+});
+
+// Results payload (page-refresh recovery for /display)
+app.get('/api/matches/:id/results', (req, res) => {
+  const results = buildResultsPayload(Number(req.params.id));
+  if (!results) return res.status(404).json({ error: 'Match not found' });
+  res.json(results);
+});
+
 // Audit log (head ref)
 app.get('/api/matches/:id/audit', (req, res) => {
   const rows = db.prepare('SELECT * FROM score_audit WHERE match_id=? ORDER BY created_at').all(Number(req.params.id));
@@ -542,6 +561,61 @@ app.get('/api/export/schedule.csv', (_req, res) => {
 });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function buildResultsPayload(matchId) {
+  const match = db.prepare('SELECT * FROM matches WHERE id=?').get(matchId);
+  if (!match) return null;
+
+  const red = getFullScore(db, matchId, 'red');
+  const blue = getFullScore(db, matchId, 'blue');
+  const redRP = computeLiveRP(db, matchId, 'red');
+  const blueRP = computeLiveRP(db, matchId, 'blue');
+  const matchCount = db.prepare('SELECT COUNT(*) AS c FROM matches WHERE phase=?').get(match.phase).c;
+
+  // Category points for the results screen rows
+  const cat = (s) => {
+    const p = s.ptsBreakdown || {};
+    return {
+      leave:    p.auto_leave || 0,
+      artifact: (p.auto_classified || 0) + (p.auto_overflow || 0) + (p.teleop_classified || 0) + (p.teleop_overflow || 0),
+      pattern:  (p.auto_pattern || 0) + (p.teleop_pattern || 0),
+      balls:    p.teleop_balls || 0,
+      base:     p.park || 0,
+      foul:     p.penalties || 0,
+    };
+  };
+
+  // Provisional rank movement: rankings without vs with this (uncommitted) match
+  const before = updateRankings(db);
+  const after  = updateRankings(db, matchId);
+  const rankOf = (list, teamId) => {
+    const r = list.find((x) => x.teamId === teamId);
+    return r ? r.rank : null;
+  };
+  const teamEntry = (teamId) => {
+    if (!teamId) return null;
+    const t = db.prepare('SELECT * FROM teams WHERE id=?').get(teamId);
+    if (!t) return null;
+    const b = rankOf(before, teamId);
+    const a = rankOf(after, teamId);
+    return { number: t.number, rank: a, delta: b != null && a != null ? b - a : null };
+  };
+
+  const winner = red.total > blue.total ? 'red' : blue.total > red.total ? 'blue' : 'tie';
+
+  return {
+    matchId,
+    match: matchWithTeams(match),
+    matchCount,
+    red:  { total: red.total,  breakdown: cat(red),  rp: redRP },
+    blue: { total: blue.total, breakdown: cat(blue), rp: blueRP },
+    winner,
+    teams: {
+      red:  [teamEntry(match.red1), teamEntry(match.red2)].filter(Boolean),
+      blue: [teamEntry(match.blue1), teamEntry(match.blue2)].filter(Boolean),
+    },
+  };
+}
 
 function broadcastScores(matchId) {
   const red = getFullScore(db, matchId, 'red');
