@@ -143,6 +143,16 @@
     .wait-sub {
       font-size: 0.95rem; color: var(--text2);
     }
+
+    #review-badge {
+      position: fixed; top: max(8px, env(safe-area-inset-top)); right: 8px; z-index: 300;
+      background: var(--yellow); color: #191100;
+      font-family: var(--font-display); font-weight: 700; font-size: 0.85rem;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      padding: 6px 14px; border-radius: 6px; display: none;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.4);
+    }
+    #review-badge.visible { display: block; }
   </style>
 </head>
 <body>
@@ -182,6 +192,8 @@
     </div>
   </div>
 
+
+  <div id="review-badge">Review</div>
 
   <div class="wait-overlay" id="wait-overlay">
     <div class="wait-text" id="wait-text">No Match Loaded</div>
@@ -282,7 +294,7 @@
 
     // ── Penalty emission ───────────────────────────────────────────────────────
     function emitPenalty(type) {
-      if (!state.matchRunning) { showToast('Match is not active', 'error'); return; }
+      if (!state.matchRunning && !document.getElementById('review-badge').classList.contains('visible')) { showToast('Match is not active', 'error'); return; }
       if (!state.matchId) { showToast('No match loaded', 'error'); return; }
       getSocket().emit('penalty', {
         matchId:    state.matchId,
@@ -303,6 +315,9 @@
             fetchExistingPenalties(ts.matchId);
             // Only mark running if the timer is actively counting
             state.matchRunning = !!(ts.running);
+            var inReview = !!(ts.matchEnded && !ts.scoresRevealed);
+            document.getElementById('review-badge').classList.toggle('visible', inReview);
+            if (inReview) setButtonsEnabled(true);
             hideWait(); // removes overlay; setButtonsEnabled inside uses matchRunning
           } else {
             showWait('No Match Loaded', 'Waiting for match to be loaded\u2026');
@@ -399,14 +414,23 @@
 
       sock.on('match_end', function () {
         state.matchRunning = false;
-        setButtonsEnabled(false);
+        periodLbl.textContent = 'Review';
+        document.getElementById('review-badge').classList.add('visible');
+        setButtonsEnabled(true);
+        // Buttons stay ENABLED — fouls can still be recorded during review
+      });
+
+      sock.on('scores_reveal', function () {
         periodLbl.textContent = 'Final';
+        document.getElementById('review-badge').classList.remove('visible');
+        setButtonsEnabled(false);
       });
 
       sock.on('match_loaded', function (data) {
         // Reset log and teams for the new match
         state.matchRunning = false;
         setButtonsEnabled(false);
+        document.getElementById('review-badge').classList.remove('visible');
         clearLog();
         if (data && data.matchId) {
           state.matchId = data.matchId;
@@ -418,6 +442,7 @@
         state.matchId = null;
         state.matchRunning = false;
         setButtonsEnabled(false);
+        document.getElementById('review-badge').classList.remove('visible');
         clearLog();
         showWait('Match Aborted', 'Waiting for next match\u2026');
       });

@@ -239,6 +239,16 @@
     .abort-banner.visible {
       display: block;
     }
+
+    #review-badge {
+      position: fixed; top: max(8px, env(safe-area-inset-top)); right: 8px; z-index: 300;
+      background: var(--yellow); color: #191100;
+      font-family: var(--font-display); font-weight: 700; font-size: 0.85rem;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      padding: 6px 14px; border-radius: 6px; display: none;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.4);
+    }
+    #review-badge.visible { display: block; }
   </style>
 </head>
 <body>
@@ -256,6 +266,8 @@
     </div>
     <div class="header-right" id="header-right"></div>
   </header>
+
+  <div id="review-badge">Review</div>
 
   <div class="ref-body" id="ref-body">
 
@@ -337,7 +349,7 @@
     }
 
     function emitPenalty(type) {
-      if (!matchRunning)  { window.showToast('Match is not active', 'error'); return; }
+      if (!matchRunning && !document.getElementById('review-badge').classList.contains('visible'))  { window.showToast('Match is not active', 'error'); return; }
       if (!state.matchId) { window.showToast('No match loaded', 'error'); return; }
       if (state.aborted)  { window.showToast('Match aborted', 'error'); return; }
       getSocket().emit('penalty', {
@@ -357,10 +369,11 @@
           if (ts.matchId) {
             state.matchId = ts.matchId;
             state.aborted = false;
-            // Buttons stay disabled until match_start; running state is
-            // driven exclusively by socket events.
             fetchPenalties(ts.matchId);
           }
+          var inReview = !!(ts.matchEnded && !ts.scoresRevealed);
+          document.getElementById('review-badge').classList.toggle('visible', inReview);
+          if (inReview) setButtonsEnabled(true);
         })
         .catch(function () {});
     }
@@ -452,6 +465,13 @@
 
       sock.on('match_end', function () {
         matchRunning = false;
+        document.getElementById('review-badge').classList.add('visible');
+        setButtonsEnabled(true);
+        // Buttons stay ENABLED — fouls can still be recorded during review
+      });
+
+      sock.on('scores_reveal', function () {
+        document.getElementById('review-badge').classList.remove('visible');
         setButtonsEnabled(false);
       });
 
@@ -459,6 +479,7 @@
         matchRunning = false;
         state.aborted = true;
         abortBanner.classList.add('visible');
+        document.getElementById('review-badge').classList.remove('visible');
         setButtonsEnabled(false);
       });
 
@@ -468,6 +489,7 @@
           state.matchId = data.matchId;
           state.aborted = false;
           abortBanner.classList.remove('visible');
+          document.getElementById('review-badge').classList.remove('visible');
           setButtonsEnabled(false);
           clearLog();
         }
