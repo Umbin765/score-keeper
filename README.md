@@ -423,12 +423,15 @@ Returns live RP breakdown for display overlay:
 { winLossRp, parkRp, patternRp, ballRp, total }
 ```
 
-#### `updateRankings(db) -> Object[]`
-Builds full rankings from all completed (committed) matches. For each team, computes total RP, wins/losses/ties, average score, and high score. Sorts by RP descending, then average score, then high score. Returns:
+#### `calculateOPR(db) -> Object`
+Computes OPR (Offensive Power Rating) for all teams using least-squares over committed qualification matches. Builds the normal equations `A^T A · x = A^T b` where each alliance gives one equation `OPR(t1) + OPR(t2) = offensive_score` (penalty points excluded). Solves via Gauss-Jordan elimination with partial pivoting. Returns `{ teamId: opr }` map rounded to 1 decimal. Teams with insufficient data return 0.
+
+#### `updateRankings(db, includeMatchId?) -> Object[]`
+Builds full rankings from all completed (committed) matches. Calls `calculateOPR` and persists OPR values to `teams.opr` (only on the committed path, not when `includeMatchId` is provided). Sorts by RP descending, then average score, then high score. Returns:
 ```javascript
 [{
   rank, teamId, teamNumber, teamName,
-  rp, avgScore, wins, losses, ties,
+  rp, opr, avgScore, wins, losses, ties,
   highScore, matchesPlayed, rpBreakdown
 }]
 ```
@@ -690,7 +693,7 @@ Full penalty grid with both alliances side by side. Minor Foul, Major Foul, Yell
 Large-font display for queueing area. Three sections: On Field Now, Report to Queue Now (pulsing border), Upcoming (next 2 matches). Real-time Socket.io updates.
 
 ### `public.html` — Public/Student View
-Mobile-friendly: Live Match (timer + scores), Upcoming Matches, Rankings table, Schedule with state chips, Playoff Bracket. All real-time via Socket.io.
+Mobile-first bottom-tab SPA. Three tabs: **Rankings** (default) shows a 9-column table with Rank, Team #, Name, RP, OPR, Avg Score, W/L/T. **Matches** shows On Deck (next 3 upcoming matches as cards) and Full Schedule (all matches with state chips). **Bracket** tab is hidden until playoff bracket data exists, then reveals automatically. All real-time via Socket.io (`rankings_update`, `queue_update`, `match_state_change`, `bracket_update`).
 
 ### `rankings.html` — Full Rankings
 Detailed rankings with expandable per-match RP breakdown. Top 3 with gold/silver/bronze coloring. CSV export button. Live updates.
