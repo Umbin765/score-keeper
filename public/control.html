@@ -385,6 +385,7 @@
       loadedMatchId: null,
       timerState: null,
       matchEnded: false,
+      scoresRevealed: false,
       currentMotif: null,
       motifLocked: false,
       redPatternBalls: '000000000',
@@ -404,7 +405,7 @@
     var pipelineList;
     var motifPatternEl, motifPickBtns;
     var periodLabelEl, timerEl, loadedLabel;
-    var startBtn, pauseBtn, resumeBtn, abortBtn, advanceBtn;
+    var startBtn, pauseBtn, resumeBtn, abortBtn, advanceBtn, revealBtn;
     var redTotal, blueTotal, redBreakdown, blueBreakdown;
     var redRpPanel, blueRpPanel;
     var redPatternRow, bluePatternRow;   // 9-element NodeLists filled at build time
@@ -657,6 +658,11 @@
       // 4. Post-match commit card
       commitCard = makeCard('Post-Match');
       commitCard.className += ' commit-card hidden';
+      revealBtn = document.createElement('button');
+      revealBtn.textContent = 'Show Scores on Display';
+      revealBtn.className = 'btn-start';
+      revealBtn.addEventListener('click', revealScores);
+      commitCard.appendChild(revealBtn);
       var commitBtn = document.createElement('button');
       commitBtn.textContent = 'Commit Scores & Save Results';
       commitBtn.addEventListener('click', commitScores);
@@ -797,6 +803,9 @@
         .then(function (ts) {
           state.timerState = ts;
           if (ts.matchEnded) state.matchEnded = true;
+          state.scoresRevealed = !!ts.scoresRevealed;
+          if (ts.matchEnded) commitCard.classList.remove('hidden');
+          updateRevealBtn();
           SK.applyTimerState(ts, timerEl, periodLabelEl);
           updateTimerButtons(ts);
           if (ts.matchId) {
@@ -1136,6 +1145,20 @@
       el.appendChild(totalRow);
     }
 
+    // ── Reveal scores ──────────────────────────────────────────────────────────
+    function updateRevealBtn() {
+      if (!revealBtn) return;
+      revealBtn.style.display = state.matchEnded && !state.scoresRevealed ? '' : 'none';
+    }
+
+    function revealScores() {
+      if (!state.loadedMatchId) { showToast('No match loaded', 'error'); return; }
+      fetch('/api/matches/' + state.loadedMatchId + '/reveal', { method: 'POST' })
+        .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+        .then(function () { showToast('Scores revealed on display', 'success'); })
+        .catch(function () { showToast('Failed to reveal scores', 'error'); });
+    }
+
     // ── Commit scores ──────────────────────────────────────────────────────────
     function commitScores() {
       if (!state.loadedMatchId) { showToast('No match loaded', 'error'); return; }
@@ -1145,6 +1168,8 @@
           showToast('Scores committed', 'success');
           commitCard.classList.add('hidden');
           state.matchEnded = false;
+          state.scoresRevealed = false;
+          updateRevealBtn();
           state.loadedMatchId = null;
           if (loadedLabel) loadedLabel.textContent = '';
           renderMotif(null);
@@ -1190,10 +1215,17 @@
 
       socket.on('match_end', function (data) {
         state.matchEnded = true;
+        state.scoresRevealed = false;
         commitCard.classList.remove('hidden');
+        updateRevealBtn();
         if (data && data.scores) renderScores(data.scores);
         showToast('Match ended — commit scores when ready', 'success');
         updateTimerButtons(data && data.state ? data.state : null);
+      });
+
+      socket.on('scores_reveal', function () {
+        state.scoresRevealed = true;
+        updateRevealBtn();
       });
 
       socket.on('score_update', function (data) {
@@ -1204,6 +1236,8 @@
         if (data && data.matchId) {
           state.loadedMatchId = data.matchId;
           state.matchEnded = false;
+          state.scoresRevealed = false;
+          updateRevealBtn();
           updateLoadedLabel(data.matchId);
           renderPipeline();
         }
@@ -1224,6 +1258,8 @@
         setMotifLocked(false);
         state.loadedMatchId = null;
         state.matchEnded = false;
+        state.scoresRevealed = false;
+        updateRevealBtn();
         commitCard.classList.add('hidden');
         if (loadedLabel) loadedLabel.textContent = '';
         renderMotif(null);

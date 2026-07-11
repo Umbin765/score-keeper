@@ -273,14 +273,20 @@ function updateRankings(db, includeMatchId = null) {
     });
   }
 
-  // Calculate OPR for all teams and persist to DB
+  // Calculate OPR for all teams
   const oprMap = calculateOPR(db);
-  const updateOpr = db.prepare('UPDATE teams SET opr=? WHERE id=?');
-  for (const [teamId, oprVal] of Object.entries(oprMap)) {
-    updateOpr.run(oprVal, Number(teamId));
+
+  // Persist OPR to DB only on committed-rankings path (not provisional preview)
+  if (includeMatchId === null) {
+    const updateOpr = db.prepare('UPDATE teams SET opr=? WHERE id=?');
+    db.transaction(() => {
+      for (const [teamId, oprVal] of Object.entries(oprMap)) {
+        updateOpr.run(oprVal, Number(teamId));
+      }
+    })();
   }
 
-  // Attach opr to each ranking entry
+  // Attach opr to each ranking entry (useful on both paths)
   rankings.forEach(r => {
     r.opr = oprMap[r.teamId] ?? 0;
   });
