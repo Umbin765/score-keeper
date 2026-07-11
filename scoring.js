@@ -273,6 +273,18 @@ function updateRankings(db, includeMatchId = null) {
     });
   }
 
+  // Calculate OPR for all teams and persist to DB
+  const oprMap = calculateOPR(db);
+  const updateOpr = db.prepare('UPDATE teams SET opr=? WHERE id=?');
+  for (const [teamId, oprVal] of Object.entries(oprMap)) {
+    updateOpr.run(oprVal, Number(teamId));
+  }
+
+  // Attach opr to each ranking entry
+  rankings.forEach(r => {
+    r.opr = oprMap[r.teamId] ?? 0;
+  });
+
   rankings.sort((a, b) => {
     if (b.rp !== a.rp) return b.rp - a.rp;
     if (b.avgScore !== a.avgScore) return b.avgScore - a.avgScore;
