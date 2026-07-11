@@ -26,7 +26,8 @@
       .ctrl-layout > :nth-child(1),
       .ctrl-layout > :nth-child(2),
       .ctrl-layout > :nth-child(3),
-      .ctrl-layout > :nth-child(5) { grid-column: 1; }
+      .ctrl-layout > :nth-child(5),
+      .ctrl-layout > :nth-child(6) { grid-column: 1; }
       .ctrl-layout > :nth-child(4) { grid-column: 2; grid-row: 1 / 6; }
     }
 
@@ -333,6 +334,23 @@
     .nmatch-btn.redo:hover { background: #221a05; }
     .nmatch-btn.cancel { background: transparent; color: var(--text2); border: 1px solid var(--border); text-align: center; }
     .nmatch-btn.cancel:hover { background: var(--bg3); }
+
+    /* ── Match History ─────────────────────────────────────────────────────── */
+    .history-list { display: flex; flex-direction: column; gap: 0.4rem; }
+    .history-row {
+      display: flex; justify-content: space-between; align-items: center;
+      background: var(--bg3); border-radius: 8px; padding: 0.6rem 0.9rem;
+      cursor: pointer; font-variant-numeric: tabular-nums;
+    }
+    .history-row:hover { background: var(--bg4); }
+    .history-edit { background: var(--bg3); border-radius: 8px; padding: 0.9rem; margin-top: 0.4rem; }
+    .history-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }
+    .history-grid label { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;
+      font-size: 0.85rem; color: var(--text2); margin-bottom: 0.35rem; }
+    .history-grid input[type=number] { width: 70px; min-height: 34px; background: var(--bg4);
+      color: var(--text); border: 1px solid var(--bg4); border-radius: 6px; text-align: center; }
+    .history-cards label { font-size: 0.85rem; display: inline-flex; align-items: center; gap: 0.3rem; margin-right: 0.8rem; }
+    .history-save { margin-top: 0.8rem; min-height: var(--tap); }
   </style>
 </head>
 <body>
@@ -409,7 +427,7 @@
     var redTotal, blueTotal, redBreakdown, blueBreakdown;
     var redRpPanel, blueRpPanel;
     var redPatternRow, bluePatternRow;   // 9-element NodeLists filled at build time
-    var commitCard;
+    var commitCard, historyCard, historyList;
 
     // ── Next-match popup ───────────────────────────────────────────────────────
     var pendingLoadMatchId = null;
@@ -668,6 +686,18 @@
       commitBtn.addEventListener('click', commitScores);
       commitCard.appendChild(commitBtn);
       layout.appendChild(commitCard);
+
+      // 5. Match History (edit committed scores)
+      historyCard = makeCard('Match History');
+      var historyToggle = document.createElement('button');
+      historyToggle.textContent = 'Show Completed Matches';
+      historyToggle.addEventListener('click', toggleHistory);
+      historyList = document.createElement('div');
+      historyList.className = 'history-list';
+      historyList.style.display = 'none';
+      historyCard.appendChild(historyToggle);
+      historyCard.appendChild(historyList);
+      layout.appendChild(historyCard);
     }
 
     function makeCard(title) {
@@ -1177,6 +1207,157 @@
           fetchMatches();
         })
         .catch(function () { showToast('Failed to commit scores', 'error'); });
+    }
+
+    // ── Match History ──────────────────────────────────────────────────────────
+    var HISTORY_FIELDS = [
+      ['auto_classified','Auto Classified'], ['auto_overflow','Auto Overflow'],
+      ['auto_leave_r1','R1 Left Zone'], ['auto_leave_r2','R2 Left Zone'],
+      ['auto_pattern','Auto Pattern'], ['teleop_classified','Teleop Classified'],
+      ['teleop_overflow','Teleop Overflow'], ['teleop_balls','Teleop Balls'],
+      ['teleop_pattern','Teleop Pattern']
+    ];
+
+    function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
+
+    function teamNum(t) { return t && t.number ? String(t.number) : '\u2014'; }
+
+    function toggleHistory() {
+      var open = historyList.style.display === 'none';
+      historyList.style.display = open ? '' : 'none';
+      if (open) loadHistory();
+    }
+
+    function loadHistory() {
+      fetch('/api/matches')
+        .then(function (r) { return r.json(); })
+        .then(function (matches) {
+          clearEl(historyList);
+          matches.filter(function (m) { return m.state === 'COMPLETED'; }).forEach(function (m) {
+            var row = document.createElement('div');
+            row.className = 'history-row';
+            var lbl = document.createElement('span');
+            lbl.textContent = (m.phase === 'playoffs' ? 'P' : 'Q') + m.match_number;
+            var teams = document.createElement('span');
+            teams.textContent = teamNum(m.red1_team) + ' & ' + teamNum(m.red2_team) +
+              ' vs ' + teamNum(m.blue1_team) + ' & ' + teamNum(m.blue2_team);
+            row.appendChild(lbl);
+            row.appendChild(teams);
+            row.addEventListener('click', function () { openHistoryEditor(m, row); });
+            historyList.appendChild(row);
+          });
+          if (!historyList.firstChild) historyList.textContent = 'No completed matches yet.';
+        })
+        .catch(function () { showToast('Failed to load matches', 'error'); });
+    }
+
+    function openHistoryEditor(m, row) {
+      var existing = row.nextSibling;
+      if (existing && existing.className === 'history-edit') { existing.remove(); return; }
+      document.querySelectorAll('.history-edit').forEach(function (e) { e.remove(); });
+
+      fetch('/api/matches/' + m.id + '/scores')
+        .then(function (r) { return r.json(); })
+        .then(function (scores) {
+          var panel = document.createElement('div');
+          panel.className = 'history-edit';
+          var grid = document.createElement('div');
+          grid.className = 'history-grid';
+          var teamsByAlliance = {
+            red:  [m.red1_team, m.red2_team].filter(Boolean),
+            blue: [m.blue1_team, m.blue2_team].filter(Boolean)
+          };
+
+          ['red', 'blue'].forEach(function (a) {
+            var col = document.createElement('div');
+            var h = document.createElement('h3');
+            h.textContent = a.toUpperCase();
+            h.className = a + '-text';
+            col.appendChild(h);
+            HISTORY_FIELDS.forEach(function (f) {
+              var lab = document.createElement('label');
+              lab.textContent = f[1];
+              var inp = document.createElement('input');
+              inp.type = 'number'; inp.min = '0';
+              inp.value = scores[a] && scores[a].raw ? (scores[a].raw[f[0]] || 0) : 0;
+              inp.setAttribute('data-alliance', a);
+              inp.setAttribute('data-field', f[0]);
+              lab.appendChild(inp);
+              col.appendChild(lab);
+            });
+            ['yellow_cards', 'red_cards'].forEach(function (cf) {
+              var wrap = document.createElement('div');
+              wrap.className = 'history-cards';
+              var title = document.createElement('div');
+              title.textContent = cf === 'yellow_cards' ? 'Yellow cards:' : 'Red cards:';
+              title.style.cssText = 'font-size:0.8rem;color:var(--text2);margin:0.4rem 0 0.2rem;';
+              wrap.appendChild(title);
+              var current = (scores[a] && scores[a][cf]) || [];
+              teamsByAlliance[a].forEach(function (t) {
+                var lab = document.createElement('label');
+                var cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.checked = current.indexOf(t.number) !== -1;
+                cb.setAttribute('data-alliance', a);
+                cb.setAttribute('data-card', cf);
+                cb.setAttribute('data-team', t.number);
+                lab.appendChild(cb);
+                lab.appendChild(document.createTextNode(' ' + t.number));
+                wrap.appendChild(lab);
+              });
+              col.appendChild(wrap);
+            });
+            grid.appendChild(col);
+          });
+
+          panel.appendChild(grid);
+          var save = document.createElement('button');
+          save.className = 'history-save';
+          save.textContent = 'Save Changes';
+          save.addEventListener('click', function () { saveHistoryEdits(m.id, panel, scores); });
+          panel.appendChild(save);
+          row.parentNode.insertBefore(panel, row.nextSibling);
+        })
+        .catch(function () { showToast('Failed to load scores', 'error'); });
+    }
+
+    function saveHistoryEdits(matchId, panel, original) {
+      var requests = [];
+      panel.querySelectorAll('input[type=number]').forEach(function (inp) {
+        var a = inp.getAttribute('data-alliance');
+        var f = inp.getAttribute('data-field');
+        var oldVal = original[a] && original[a].raw ? (original[a].raw[f] || 0) : 0;
+        var newVal = Number(inp.value) || 0;
+        if (newVal !== oldVal) {
+          requests.push(fetch('/api/matches/' + matchId + '/override', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ alliance: a, field: f, value: newVal, changedBy: 'control-history' })
+          }));
+        }
+      });
+      ['red', 'blue'].forEach(function (a) {
+        ['yellow_cards', 'red_cards'].forEach(function (cf) {
+          var boxes = panel.querySelectorAll('input[data-alliance="' + a + '"][data-card="' + cf + '"]');
+          if (!boxes.length) return;
+          var newCards = [];
+          boxes.forEach(function (cb) { if (cb.checked) newCards.push(Number(cb.getAttribute('data-team'))); });
+          var oldCards = (original[a] && original[a][cf]) || [];
+          if (JSON.stringify(newCards.slice().sort()) !== JSON.stringify(oldCards.slice().sort())) {
+            requests.push(fetch('/api/matches/' + matchId + '/override', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ alliance: a, field: cf, value: newCards, changedBy: 'control-history' })
+            }));
+          }
+        });
+      });
+      if (!requests.length) { showToast('No changes', 'error'); return; }
+      Promise.all(requests)
+        .then(function (rs) {
+          if (rs.some(function (r) { return !r.ok; })) throw new Error();
+          showToast('Saved — rankings updated', 'success');
+          panel.remove();
+        })
+        .catch(function () { showToast('Some changes failed to save', 'error'); });
     }
 
     // ── Socket ─────────────────────────────────────────────────────────────────
