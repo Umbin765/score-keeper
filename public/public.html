@@ -128,6 +128,22 @@
     .bracket-card .bc-blue { color: var(--blue-light); font-weight: 700; }
     .bracket-card .bc-win  { color: var(--green); font-size: 0.7rem; margin-top: 0.2rem; }
 
+    /* ── Search bar ── */
+    .rankings-search {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 0.55rem 0.85rem;
+      font-size: 0.95rem;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      margin-bottom: 0.75rem;
+      outline: none;
+    }
+    .rankings-search:focus { border-color: var(--blue-light); }
+    .rankings-search::placeholder { color: var(--text2); }
+
     /* ── Empty state ── */
     .empty-state {
       text-align: center;
@@ -141,6 +157,7 @@
 
   <!-- Rankings panel (default) -->
   <div id="panel-rankings" class="panel active">
+    <input id="rankings-search" class="rankings-search" type="search" placeholder="Search by team # or name…" autocomplete="off">
     <div style="overflow-x:auto;">
       <table class="data-table">
         <thead>
@@ -222,19 +239,35 @@
     }
 
     // ── Rankings ───────────────────────────────────────────────────────────────
-    var rankingsBody = document.getElementById('rankings-body');
+    var rankingsBody   = document.getElementById('rankings-body');
+    var rankingsSearch = document.getElementById('rankings-search');
+    var allRankings    = [];
 
-    function renderRankings(rankings) {
+    function applyRankingsFilter() {
+      var q = rankingsSearch.value.trim().toLowerCase();
+      var filtered = q
+        ? allRankings.filter(function (r) {
+            var num  = String(r.teamNumber || r.team || '');
+            var name = (r.teamName || r.name || '').toLowerCase();
+            return num.includes(q) || name.includes(q);
+          })
+        : allRankings;
+      renderRankingsRows(filtered);
+    }
+
+    rankingsSearch.addEventListener('input', applyRankingsFilter);
+
+    function renderRankingsRows(rankings) {
       while (rankingsBody.firstChild) rankingsBody.removeChild(rankingsBody.firstChild);
       if (!rankings || rankings.length === 0) {
         var tr = document.createElement('tr');
         var td = document.createElement('td');
         td.colSpan = 9; td.className = 'empty-state';
-        td.textContent = 'No rankings yet';
+        td.textContent = allRankings.length === 0 ? 'No rankings yet' : 'No teams match your search';
         tr.appendChild(td); rankingsBody.appendChild(tr);
         return;
       }
-      rankings.forEach(function (r, i) {
+      rankings.forEach(function (r) {
         var tr = document.createElement('tr');
         function cell(val, cls) {
           var td = document.createElement('td');
@@ -242,7 +275,7 @@
           td.textContent = val != null ? val : '—';
           return td;
         }
-        tr.appendChild(cell(i + 1, 'rank-num'));
+        tr.appendChild(cell(r.rank != null ? r.rank : '—', 'rank-num'));
         tr.appendChild(cell(r.teamNumber || r.team));
         tr.appendChild(cell(r.teamName || r.name || ''));
         tr.appendChild(cell(r.rp != null ? r.rp : '—'));
@@ -253,6 +286,11 @@
         tr.appendChild(cell(r.ties != null ? r.ties : '—'));
         rankingsBody.appendChild(tr);
       });
+    }
+
+    function renderRankings(rankings) {
+      allRankings = rankings || [];
+      applyRankingsFilter();
     }
 
     // ── Matches ────────────────────────────────────────────────────────────────
