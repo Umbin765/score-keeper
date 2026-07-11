@@ -391,7 +391,9 @@
           if (ts.matchEnded && ts.scoresRevealed) showWait('Match Over');
           if (ts.matchId) {
             state.matchId = ts.matchId;
-            state.currentPeriod = ts.period;
+            // After match end ts.period is null — treat review as BUZZER so
+            // the "Open Scoring" prompt renders and corrections stay possible
+            state.currentPeriod = ts.period || (state.reviewing ? { name: 'REVIEW', type: 'BUZZER' } : null);
             fetchScores(ts.matchId, ts.endgameCycle || 0);
             fetchMotif(ts.matchId);
           }
