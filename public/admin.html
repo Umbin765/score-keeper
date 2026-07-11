@@ -221,7 +221,7 @@
       table.className = 'data-table';
       var thead = document.createElement('thead');
       var htr = document.createElement('tr');
-      ['#', 'Name', 'Delete'].forEach(function (h) {
+      ['#', 'Name', 'OPR', 'Delete'].forEach(function (h) {
         var th = document.createElement('th');
         th.textContent = h;
         htr.appendChild(th);
@@ -244,6 +244,10 @@
         numTd.textContent = team.number || team.team_number;
         var nameTd = document.createElement('td');
         nameTd.textContent = team.name;
+        var oprTd = document.createElement('td');
+        oprTd.textContent = team.opr != null ? Number(team.opr).toFixed(1) : '—';
+        oprTd.style.color = 'var(--text2)';
+        oprTd.style.textAlign = 'right';
         var delTd = document.createElement('td');
         var delBtn = document.createElement('button');
         delBtn.className = 'danger-btn';
@@ -254,6 +258,7 @@
         delTd.appendChild(delBtn);
         row.appendChild(numTd);
         row.appendChild(nameTd);
+        row.appendChild(oprTd);
         row.appendChild(delTd);
         teamsTableBody.appendChild(row);
       });
