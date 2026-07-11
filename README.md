@@ -33,6 +33,7 @@ scoring.js         Score calculation, RP computation, rankings engine
 scheduler.js       Round-robin schedule generator (circle method)
 bracket.js         Double-elimination bracket templates (4/6/8 alliances)
 public/js/common.js  Shared client utilities (PIN pad, timer, toasts, buzzer)
+public/js/qrcode.js  Vendored qrcode-generator (offline QR on results screen)
 public/css/style.css Global dark-theme design system (tokens, fonts, components)
 public/fonts/        Self-hosted Barlow / Barlow Condensed woff2 (works offline)
 public/*.html      Thin browser clients (vanilla JS, no framework)
@@ -372,6 +373,7 @@ Owns a `setInterval` ticking once per second. Emits Socket.io events to all conn
 | `paused` | boolean | True when paused |
 | `endgameCycle` | number | Current endgame cycle number |
 | `matchEnded` | boolean | True after all periods complete |
+| `scoresRevealed` | boolean | True once scores have been revealed after match end |
 
 **Methods:**
 
@@ -427,7 +429,7 @@ Returns live RP breakdown for display overlay:
 Computes OPR (Offensive Power Rating) for all teams using least-squares over committed qualification matches. Builds the normal equations `A^T A · x = A^T b` where each alliance gives one equation `OPR(t1) + OPR(t2) = offensive_score` (penalty points excluded). Solves via Gauss-Jordan elimination with partial pivoting. Returns `{ teamId: opr }` map rounded to 1 decimal. Teams with insufficient data return 0.
 
 #### `updateRankings(db, includeMatchId?) -> Object[]`
-Builds full rankings from all completed (committed) matches. Calls `calculateOPR` and persists OPR values to `teams.opr` (only on the committed path, not when `includeMatchId` is provided). Sorts by RP descending, then average score, then high score. Returns:
+Builds full rankings from committed matches. When `includeMatchId` is provided, that match's current (potentially uncommitted) scores are included in the calculation, producing **provisional rankings** — this is used to show rank movement on the Match Results screen before the head referee commits. OPR is only persisted to `teams.opr` on the committed path (i.e. when `includeMatchId` is not provided). Sorts by RP descending, then average score, then high score. Returns:
 ```javascript
 [{
   rank, teamId, teamNumber, teamName,
@@ -514,11 +516,15 @@ Roles: `red`, `blue`, `ref`, `headref`, `control`, `queue`. The `headref` role a
 | GET | `/api/matches/:id/scores` | — | `{ red: ScoreObj, blue: ScoreObj }` |
 | GET | `/api/matches/:id/penalties` | — | `Penalty[]` |
 | POST | `/api/matches/:id/commit` | — | `{ ok, rankings }` |
-| POST | `/api/matches/:id/override` | `{ alliance, field, value, changedBy }` | `{ ok }` |
+| POST | `/api/matches/:id/override` | `{ alliance, field, value, changedBy }` | `{ ok }` or 400 |
 | POST | `/api/matches/:id/replay` | — | `{ ok }` |
 | GET | `/api/matches/:id/audit` | — | `AuditEntry[]` |
+| POST | `/api/matches/:id/reveal` | — | `{ ok }` or 409 | Reveals final scores: triggers winner animation + Match Results screen on `/display`. Returns 409 if no match is loaded, match has not ended, or scores were already revealed. |
+| GET | `/api/matches/:id/results` | — | Results payload or 404 | Returns the full post-match results payload (scores, category breakdown, RPs, provisional rank movement). 404 if the match does not exist. |
 
-**Override allowed fields:** `auto_classified`, `auto_overflow`, `auto_leave`, `auto_leave_r1`, `auto_leave_r2`, `auto_pattern`, `teleop_classified`, `teleop_overflow`, `teleop_balls`
+**Override allowed fields:** `auto_classified`, `auto_overflow`, `auto_leave`, `auto_leave_r1`, `auto_leave_r2`, `auto_pattern`, `teleop_classified`, `teleop_overflow`, `teleop_balls`, `teleop_pattern`, `yellow_cards`, `red_cards`
+
+The `value` field is a number for all numeric fields, or a JSON array of team numbers for `yellow_cards` / `red_cards` (400 returned otherwise). When overriding a committed match, rankings are automatically re-calculated and a `rankings_update` event is emitted.
 
 ### Settings & Periods
 
@@ -584,6 +590,7 @@ Roles: `red`, `blue`, `ref`, `headref`, `control`, `queue`. The `headref` role a
 | `match_loaded` | `{ matchId, period, timeRemaining }` | Match loaded into timer |
 | `match_state_change` | `{ matchId, state, match }` | Match state updated via API |
 | `score_update` | `{ matchId, red, blue, redRP, blueRP }` | Any score change |
+| `scores_reveal` | Full results payload (scores, category breakdown, RPs, provisional rank movement) | Controller clicks "Show Scores on Display" |
 | `penalty_added` | `{ matchId, penalty, all }` | Penalty recorded |
 | `motif_update` | `{ matchId, motif }` | Motif set/randomized |
 | `match_replay` | `{ matchId }` | Match reset for replay |
@@ -649,9 +656,11 @@ Enriches a match row with team details (`red1_team`, `red2_team`, `blue1_team`, 
 6. **Start timer** — begins AUTO period, scorers can input scores
 7. **Score in real-time** — scorers increment/decrement fields, referees log fouls
 8. **Timer progresses** — AUTO -> TRANSITION -> (TELEOP -> ENDGAME -> BUZZER) x5
-9. **Match ends** — timer completes all periods, display shows winner
-10. **Head referee commits** — finalizes scores, updates rankings
-11. **Playoffs** — alliance selection, bracket initialization, playoff matches
+9. **Match ends** — timer completes all periods; display shows "UNDER REVIEW" banner with frozen scores; scorer and referee pages stay fully editable so corrections can be made
+10. **Review phase** — refs and scorers may still adjust scores, fouls, and cards; display does not update
+11. **Controller reveals scores** — clicks "Show Scores on Display" in the Post-Match card; display plays a pyramid winner animation (~4.4 s) then transitions to the broadcast-style Match Results screen
+12. **Head referee commits** — finalizes scores, updates official rankings; results screen rank pills refresh live
+13. **Playoffs** — alliance selection, bracket initialization, playoff matches
 
 ---
 
@@ -664,6 +673,9 @@ Designed for 1920x1080 broadcast output with transparent background (chroma-key)
 - Score bar (180px) — alliance backgrounds with bright accent polygons, robot/foul pills, auto/teleop sub-pills with `/36` goal cell (changes color on RP threshold), team number cards, alliance label + total score, timer panel with motif artifact dots
 - Motif reveal overlay — 6-second full-screen popup showing colored artifact images when motif is randomized
 - Post-match banner — shows winner and final score
+- **Review freeze** — after `match_end`, the display enters a "UNDER REVIEW" state: scores are frozen and the banner is replaced by a review indicator. Score updates from scorer/ref edits are not reflected on the display during this phase.
+- **Winner animation** — triggered by `scores_reveal`; a pyramid graphic rises from the bottom (~4.4 s) identifying the winning alliance before transitioning to the results screen.
+- **Match Results screen** — broadcast-style overlay showing: match header (Qualification N of M, winning alliance), six category rows (LEAVE, ARTIFACT, PATTERN, BALLS, BASE, FOUL) with red and blue values side by side, team rank pills with provisional rank-movement arrows (up/down/neutral), RP icon rows (win, park, pattern, ball), and a QR code linking to `/public`. The screen live-updates on `score_update` and `rankings_update` events after commit, allowing corrections to be reflected immediately. It dismisses automatically when a new match is loaded (`match_loaded`) or the timer is aborted. On page reload while scores are revealed, the screen is restored from `GET /api/matches/:id/results`.
 
 **RP Goal Cell:** The `/36` goal cell on each sub-pill changes color based on pattern RP progress:
 - Default: alliance accent color (red/blue)
@@ -678,16 +690,16 @@ Designed for 1920x1080 broadcast output with transparent background (chroma-key)
 Styled grid of all available URLs organized into sections: Audience, Queue, Operators, Admin. Each card shows the URL path, title, description, and auth badge.
 
 ### `control.html` — Match Controller
-Match pipeline showing up to 5 non-completed matches with state badges and action buttons. Motif card with randomize and manual pickers. Timer controls (Start/Pause/Resume/Advance/Abort) — button states are driven by the live timer state machine and update automatically on every socket event so operators always see which actions are valid. Live scores with pattern balls grid and per-category breakdowns. Post-match commit card. At viewports ≥ 1000 px, the layout switches to a 2-column grid (pipeline + timer + scores on the left, motif card spanning the right). Desktop-only; no mobile optimization applied.
+Match pipeline showing up to 5 non-completed matches with state badges and action buttons. Motif card with randomize and manual pickers. Timer controls (Start/Pause/Resume/Advance/Abort) — button states are driven by the live timer state machine and update automatically on every socket event so operators always see which actions are valid. Live scores with pattern balls grid and per-category breakdowns. Post-match card with **Show Scores on Display** (triggers `POST /reveal` — winner animation + results screen on `/display`; button hides once revealed, refresh-safe) and **Commit Scores**. A collapsible **Match History** drawer lists completed matches and opens an inline editor for every score field plus yellow/red cards — saves go through `/override` and rankings recalculate automatically. At viewports ≥ 1000 px, the layout switches to a 2-column grid (pipeline + timer + scores on the left, motif card spanning the right). Desktop-only; no mobile optimization applied.
 
 ### `red.html` / `blue.html` — Alliance Scorers
-Full-screen touch-optimized tablet interface. Context-sensitive scoring controls based on current period: AUTO (Classified, Overflow, Leave Zone toggles), TRANSITION (9-ball pattern grid), TELEOP (Classified, Overflow, Balls), ENDGAME (Park status per robot), BUZZER (wait overlay). Score cards use `min-height: var(--tap)` (48 px) to ensure reliable tap targets under pressure. Timer and scores use `font-family: var(--font-display)` with `clamp()` sizing for legibility at all viewport widths. Alliance-colored headers use a dark gradient with `env(safe-area-inset-top)` padding for notch-safe layout on tablets.
+Full-screen touch-optimized tablet interface. Context-sensitive scoring controls based on current period: AUTO (Classified, Overflow, Leave Zone toggles), TRANSITION (9-ball pattern grid), TELEOP (Classified, Overflow, Balls), ENDGAME (Park status per robot), BUZZER (wait overlay). Score cards use `min-height: var(--tap)` (48 px) to ensure reliable tap targets under pressure. Timer and scores use `font-family: var(--font-display)` with `clamp()` sizing for legibility at all viewport widths. Alliance-colored headers use a dark gradient with `env(safe-area-inset-top)` padding for notch-safe layout on tablets. After match end the page enters **review mode**: a yellow REVIEW badge appears and scoring stays fully editable (server accepts corrections) until the controller reveals the scores, at which point the "Match Over" overlay locks the page.
 
 ### `ref.html` / `ref-blue.html` — Field Referees
-Two large solid-filled foul buttons: Minor Foul (yellow fill, `var(--yellow)`) and Major Foul (red fill, `var(--red)`). Solid fills replace the previous outlined style so buttons are unambiguous under arena lighting. Shows compact timer and both alliance scores in the header. Foul buttons have `min-height: 110px` and use `var(--font-display)` for maximum legibility on handheld devices. Timer in header uses `clamp()` for fluid sizing. Alliance-specific gradient headers with `env(safe-area-inset-top)` for notch safety.
+Two large solid-filled foul buttons: Minor Foul (yellow fill, `var(--yellow)`) and Major Foul (red fill, `var(--red)`). Solid fills replace the previous outlined style so buttons are unambiguous under arena lighting. Shows compact timer and both alliance scores in the header. Foul buttons have `min-height: 110px` and use `var(--font-display)` for maximum legibility on handheld devices. Timer in header uses `clamp()` for fluid sizing. Alliance-specific gradient headers with `env(safe-area-inset-top)` for notch safety. During post-match review a REVIEW badge shows and foul buttons remain active; they disable when scores are revealed.
 
 ### `headref.html` — Head Referee
-Full penalty grid with both alliances side by side. Minor Foul, Major Foul, Yellow Card, Red Card per alliance. Team picker modal for cards. Penalty log table. Post-match: Commit Scores and Mark for Replay. At viewports ≥ 900 px (tablet landscape and desktop), the layout switches to a 2-column grid: penalty buttons on the left spanning both rows, penalty log and post-match actions stacked on the right. Penalty buttons use `min-height: 68px` and display font for fast, accurate tapping. Safe-area insets applied at the bottom for tablet home-bar clearance.
+Full penalty grid with both alliances side by side. Minor Foul, Major Foul, Yellow Card, Red Card per alliance. Team picker modal for cards. Penalty log table. Post-match: Commit Scores and Mark for Replay. At viewports ≥ 900 px (tablet landscape and desktop), the layout switches to a 2-column grid: penalty buttons on the left spanning both rows, penalty log and post-match actions stacked on the right. Penalty buttons use `min-height: 68px` and display font for fast, accurate tapping. Safe-area insets applied at the bottom for tablet home-bar clearance. During post-match review a REVIEW badge shows and all penalty/card buttons remain active until scores are revealed.
 
 ### `queue.html` — Queue Display
 Large-font display for queueing area. Three sections: On Field Now, Report to Queue Now (pulsing border), Upcoming (next 2 matches). Real-time Socket.io updates.
