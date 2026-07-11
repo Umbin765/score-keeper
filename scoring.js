@@ -114,6 +114,96 @@ function computeLiveRP(db, matchId, alliance) {
 }
 
 /**
+ * Calculate OPR (Offensive Power Rating) for all teams using
+ * least-squares over committed match scores (normal equations,
+ * Gauss-Jordan elimination). Returns map of { teamId: opr }.
+ * Teams with insufficient data get OPR 0.
+ */
+function calculateOPR(db) {
+  const teams = db.prepare('SELECT id FROM teams ORDER BY id').all();
+  const n = teams.length;
+  if (n === 0) return {};
+
+  // Map team DB id → matrix column index
+  const idxById = {};
+  teams.forEach((t, i) => { idxById[t.id] = i; });
+
+  // Collect one entry per committed alliance (quals only, no penalty inflation)
+  const committedMatches = db.prepare(`
+    SELECT DISTINCT ms.match_id, m.red1, m.red2, m.blue1, m.blue2
+    FROM match_scores ms
+    JOIN matches m ON m.id = ms.match_id
+    WHERE ms.committed = 1 AND m.phase = 'quals'
+  `).all();
+
+  const alliances = [];
+  for (const match of committedMatches) {
+    for (const al of ['red', 'blue']) {
+      const t1 = al === 'red' ? match.red1 : match.blue1;
+      const t2 = al === 'red' ? match.red2 : match.blue2;
+      if (!t1 || !t2) continue;
+      // Use offensive score only (exclude opponent penalty points)
+      const full = getFullScore(db, match.match_id, al);
+      const score = full.total - (full.penalties || 0);
+      alliances.push({ t1, t2, score });
+    }
+  }
+
+  if (alliances.length === 0) return {};
+
+  // Build A^T A (n×n) and A^T b (n×1)
+  const ATA = Array.from({ length: n }, () => new Array(n).fill(0));
+  const ATb = new Array(n).fill(0);
+
+  for (const { t1, t2, score } of alliances) {
+    const i = idxById[t1];
+    const j = idxById[t2];
+    if (i === undefined || j === undefined) continue;
+    // A row has 1s at columns i and j; A^T A += outer product of that row
+    ATA[i][i] += 1; ATA[i][j] += 1;
+    ATA[j][i] += 1; ATA[j][j] += 1;
+    ATb[i] += score;
+    ATb[j] += score;
+  }
+
+  // Augmented matrix [ATA | ATb], solve via Gauss-Jordan with partial pivoting
+  const aug = ATA.map((row, i) => [...row, ATb[i]]);
+
+  for (let col = 0; col < n; col++) {
+    // Partial pivot: find row with largest absolute value in this column
+    let pivotRow = col;
+    for (let row = col + 1; row < n; row++) {
+      if (Math.abs(aug[row][col]) > Math.abs(aug[pivotRow][col])) pivotRow = row;
+    }
+    [aug[col], aug[pivotRow]] = [aug[pivotRow], aug[col]];
+
+    const pivot = aug[col][col];
+    if (Math.abs(pivot) < 1e-9) continue; // singular row — skip
+
+    // Normalize pivot row so diagonal becomes 1
+    const scale = 1 / pivot;
+    for (let k = col; k <= n; k++) aug[col][k] *= scale;
+
+    // Eliminate this column from all other rows
+    for (let row = 0; row < n; row++) {
+      if (row === col) continue;
+      const factor = aug[row][col];
+      if (Math.abs(factor) < 1e-12) continue;
+      for (let k = col; k <= n; k++) aug[row][k] -= factor * aug[col][k];
+    }
+  }
+
+  // After Gauss-Jordan, aug[i][n] is the solution for team i
+  const result = {};
+  teams.forEach((t, i) => {
+    const val = Math.abs(aug[i][i]) < 1e-9 ? 0 : aug[i][n];
+    result[t.id] = Math.round(val * 10) / 10;
+  });
+
+  return result;
+}
+
+/**
  * Build full rankings from all completed (committed) matches.
  * Pass includeMatchId to also count one uncommitted match (provisional
  * rankings for post-match rank-movement display). Never persisted.
@@ -200,5 +290,6 @@ module.exports = {
   calculateBallsScored,
   calculateRP,
   computeLiveRP,
+  calculateOPR,
   updateRankings,
 };
