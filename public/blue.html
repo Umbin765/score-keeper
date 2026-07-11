@@ -235,6 +235,16 @@
       display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 1rem;
     }
     .wait-text { font-family: var(--font-display); font-size: clamp(2rem, 8vw, 3.2rem); font-weight: 800; color: var(--text2); text-transform: uppercase; letter-spacing: 0.14em; text-align: center; padding: 0 1rem; }
+
+    #review-badge {
+      position: fixed; top: max(8px, env(safe-area-inset-top)); right: 8px; z-index: 300;
+      background: var(--yellow); color: #191100;
+      font-family: var(--font-display); font-weight: 700; font-size: 0.85rem;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      padding: 6px 14px; border-radius: 6px; display: none;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.4);
+    }
+    #review-badge.visible { display: block; }
   </style>
 </head>
 <body>
@@ -264,6 +274,8 @@
   <div class="wait-overlay hidden" id="wait-overlay">
     <div class="wait-text" id="wait-text">Wait...</div>
   </div>
+
+  <div id="review-badge">Review</div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="/js/common.js"></script>
@@ -297,6 +309,7 @@
       parkViewOpen: false,
       buzzerScoringOpen: false,
       timerRunning: false,  // true only when running and not paused
+      reviewing: false,     // post-match review phase — edits still allowed
     };
 
     SK.mountPinPad(ALLIANCE, 'Blue Alliance Scorer').then(function () {
@@ -372,6 +385,9 @@
         .then(function (ts) {
           SK.applyTimerState(ts, timerEl, periodLbl);
           state.timerRunning = !!(ts.running && !ts.paused);
+          state.reviewing = !!(ts.matchEnded && !ts.scoresRevealed);
+          document.getElementById('review-badge').classList.toggle('visible', state.reviewing);
+          if (ts.matchEnded && ts.scoresRevealed) showWait('Match Over');
           if (ts.matchId) {
             state.matchId = ts.matchId;
             state.currentPeriod = ts.period;
@@ -629,7 +645,7 @@
     }
 
     function sendPatternBall(idx, selected) {
-      if (!state.matchId || !state.timerRunning) return;
+      if (!state.matchId || (!state.timerRunning && !state.reviewing)) return;
       getSocket().emit('pattern_ball', { matchId: state.matchId, alliance: ALLIANCE, ballIdx: idx, selected: selected });
     }
 
@@ -768,18 +784,18 @@
     }
 
     function sendIncrement(field, delta) {
-      if (!state.matchId || !state.timerRunning) return;
+      if (!state.matchId || (!state.timerRunning && !state.reviewing)) return;
       var ev = delta > 0 ? 'score_increment' : 'score_decrement';
       getSocket().emit(ev, { matchId: state.matchId, alliance: ALLIANCE, field: field });
     }
 
     function sendToggle(field, val) {
-      if (!state.matchId || !state.timerRunning) return;
+      if (!state.matchId || (!state.timerRunning && !state.reviewing)) return;
       getSocket().emit('score_set', { matchId: state.matchId, alliance: ALLIANCE, field: field, value: val });
     }
 
     function sendParkUpdate(robot, status) {
-      if (!state.matchId || !state.timerRunning) return;
+      if (!state.matchId || (!state.timerRunning && !state.reviewing)) return;
       getSocket().emit('park_update', { matchId: state.matchId, alliance: ALLIANCE, robot: robot, status: status });
     }
 
@@ -890,11 +906,23 @@
 
       sock.on('match_end', function () {
         state.timerRunning = false;
+        state.reviewing = true;
+        state.buzzerScoringOpen = false;
+        hideWait();
+        document.getElementById('review-badge').classList.add('visible');
+        renderScoringPanel();   // last period is BUZZER → shows the "Open Scoring" prompt
+      });
+
+      sock.on('scores_reveal', function () {
+        state.reviewing = false;
+        document.getElementById('review-badge').classList.remove('visible');
         showWait('Match Over');
       });
 
       sock.on('match_abort', function () {
         state.timerRunning = false;
+        state.reviewing = false;
+        document.getElementById('review-badge').classList.remove('visible');
         showWait('Aborted');
       });
 
@@ -920,6 +948,8 @@
           fetchScores(data.matchId, 0);
           fetchMotif(data.matchId);
         }
+        state.reviewing = false;
+        document.getElementById('review-badge').classList.remove('visible');
         hideWait();
         renderScoringPanel();
       });
