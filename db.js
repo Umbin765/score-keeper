@@ -145,6 +145,11 @@ function initSchema(db) {
     db.prepare("ALTER TABLE match_scores ADD COLUMN teleop_pattern INTEGER NOT NULL DEFAULT 0").run();
   } catch (_) { /* column already exists */ }
 
+  // OPR — computed after each commit, stored per team
+  try {
+    db.prepare("ALTER TABLE teams ADD COLUMN opr REAL NOT NULL DEFAULT 0").run();
+  } catch (_) { /* column already exists */ }
+
   runSchema(db, `
     CREATE TABLE IF NOT EXISTS alliance_selections (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
