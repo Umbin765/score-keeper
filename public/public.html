@@ -86,6 +86,9 @@
     .vs-sep { font-size: 0.75rem; color: var(--border); }
     .schedule-wrap { margin-top: 1.25rem; overflow-x: auto; }
 
+    /* ── Winner cell highlight ── */
+    td.winner-cell { outline: 2px solid var(--green); border-radius: 4px; }
+
     /* ── State chips ── */
     .match-state-chip {
       display: inline-block;
@@ -364,10 +367,12 @@
         (m.red || []).forEach(function (t) {
           var c = teamChip(t, 'red'); c.style.marginRight = '4px'; redTd.appendChild(c);
         });
+        if (m.winner === 'red') redTd.classList.add('winner-cell');
         var blueTd = document.createElement('td');
         (m.blue || []).forEach(function (t) {
           var c = teamChip(t, 'blue'); c.style.marginRight = '4px'; blueTd.appendChild(c);
         });
+        if (m.winner === 'blue') blueTd.classList.add('winner-cell');
         var resTd = document.createElement('td');
         resTd.appendChild(stateChip(m.state, m.winner));
         tr.appendChild(numTd); tr.appendChild(redTd);
