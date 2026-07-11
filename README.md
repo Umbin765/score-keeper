@@ -33,9 +33,63 @@ scoring.js         Score calculation, RP computation, rankings engine
 scheduler.js       Round-robin schedule generator (circle method)
 bracket.js         Double-elimination bracket templates (4/6/8 alliances)
 public/js/common.js  Shared client utilities (PIN pad, timer, toasts, buzzer)
-public/css/style.css Global dark-theme stylesheet
+public/css/style.css Global dark-theme design system (tokens, fonts, components)
+public/fonts/        Self-hosted Barlow / Barlow Condensed woff2 (works offline)
 public/*.html      Thin browser clients (vanilla JS, no framework)
 ```
+
+The UI uses self-hosted fonts served from `/fonts` (`Barlow` for UI text, `Barlow Condensed` for timers, scores and headings) so the system works fully offline. Design tokens (colors, fonts, shadows, touch-target size) are CSS variables defined in `style.css` under `:root`.
+
+---
+
+## Design System
+
+### Fonts
+
+Six woff2 files (~92 KB total) are bundled in `public/fonts/` and served via the Express static route `app.use('/fonts', ...)`. No external CDN requests are made at runtime.
+
+| File | Weight | Use |
+|------|--------|-----|
+| `Barlow-400.woff2` | Regular | Body text, labels |
+| `Barlow-600.woff2` | SemiBold | UI emphasis |
+| `Barlow-700.woff2` | Bold | Headings |
+| `BarlowCondensed-600.woff2` | SemiBold | Compact numeric displays |
+| `BarlowCondensed-700.woff2` | Bold | Period labels, section headers |
+| `BarlowCondensed-800.woff2` | ExtraBold | Timers, scores, primary display |
+
+### CSS Custom Properties (`:root`)
+
+| Token | Value | Purpose |
+|-------|-------|---------|
+| `--font-main` | `'Barlow'` | Body / UI text |
+| `--font-display` | `'Barlow Condensed'` | Timers, scores, headings |
+| `--tap` | `48px` | Minimum touch-target size |
+| `--bg` | `#0a0c10` | Page background |
+| `--bg2` | `#12151c` | Card background |
+| `--bg3` | `#1b1f28` | Elevated surface |
+| `--bg4` | `#262b36` | Input / inactive state |
+| `--text` | `#e8ecf4` | Primary text |
+| `--text2` | `#8b93a8` | Secondary / muted text |
+| `--red` | `#e5233d` | Red alliance accent |
+| `--red-light` | `#ff4d5e` | Red hover / border |
+| `--blue` | `#1567e0` | Blue alliance accent |
+| `--blue-light` | `#4d94ff` | Blue hover / border |
+| `--green` | `#16c95c` | Success / positive |
+| `--yellow` | `#ffc233` | Warning / minor foul |
+| `--radius` | `10px` | Default border radius |
+| `--shadow-1` | `0 2px 8px rgba(0,0,0,.45)` | Card shadow |
+| `--shadow-2` | `0 4px 20px rgba(0,0,0,.6)` | Elevated shadow |
+
+### Responsive Design Breakpoints
+
+Ref and scorer views (`ref.html`, `ref-blue.html`, `red.html`, `blue.html`, `headref.html`) are designed mobile-first. The match controller (`control.html`) is desktop-only.
+
+| Breakpoint | Applied to | Effect |
+|------------|-----------|--------|
+| `min-width: 900px` | `headref.html` | 2-column grid (penalty buttons left, log + actions right) |
+| `min-width: 1000px` | `control.html` | 2-column grid (pipeline/timer/scores left, motif right) |
+
+Ref and scorer views use `clamp()` for fluid type scaling and `env(safe-area-inset-top/bottom)` for notch-safe layout on tablets.
 
 ---
 
@@ -566,7 +620,7 @@ All exposed on `window.SK`:
 | `SK.mountPinPad` | `(role, label) -> Promise<boolean>` | Full-screen PIN pad overlay. Numeric 4-digit for roles, text input for admin. Checks existing auth first. |
 | `SK.addLogoutButton` | `(container) -> void` | Adds logout button that POSTs to `/api/auth/logout` |
 | `SK.connectSocket` | `() -> Socket\|null` | Returns Socket.io client or null |
-| `SK.applyTimerState` | `(state, timerEl, periodEl) -> void` | Updates timer/period DOM elements from state. Applies `endgame` and `final` CSS classes. |
+| `SK.applyTimerState` | `(state, timerEl, periodEl) -> void` | Updates timer/period DOM elements from state. Adds `.endgame` class during ENDGAME periods and `.final` class after match end — both used by CSS to change timer color. |
 | `SK.playBuzzer` | `() -> void` | Web Audio API buzzer (square wave, 440Hz -> 300Hz, 0.6s) |
 | `window.showToast` | `(msg, type?, ms?) -> void` | Transient toast notification. Types: `'error'`, `'success'` |
 
@@ -621,16 +675,16 @@ Designed for 1920x1080 broadcast output with transparent background (chroma-key)
 Styled grid of all available URLs organized into sections: Audience, Queue, Operators, Admin. Each card shows the URL path, title, description, and auth badge.
 
 ### `control.html` — Match Controller
-Match pipeline showing up to 5 non-completed matches with state badges and action buttons. Motif card with randomize and manual pickers. Timer controls (Start/Pause/Resume/Advance/Abort). Live scores with pattern balls grid and per-category breakdowns. Post-match commit card.
+Match pipeline showing up to 5 non-completed matches with state badges and action buttons. Motif card with randomize and manual pickers. Timer controls (Start/Pause/Resume/Advance/Abort) — button states are driven by the live timer state machine and update automatically on every socket event so operators always see which actions are valid. Live scores with pattern balls grid and per-category breakdowns. Post-match commit card. At viewports ≥ 1000 px, the layout switches to a 2-column grid (pipeline + timer + scores on the left, motif card spanning the right). Desktop-only; no mobile optimization applied.
 
 ### `red.html` / `blue.html` — Alliance Scorers
-Full-screen touch-optimized tablet interface. Context-sensitive scoring controls based on current period: AUTO (Classified, Overflow, Leave Zone toggles), TRANSITION (9-ball pattern grid), TELEOP (Classified, Overflow, Balls), ENDGAME (Park status per robot), BUZZER (wait overlay).
+Full-screen touch-optimized tablet interface. Context-sensitive scoring controls based on current period: AUTO (Classified, Overflow, Leave Zone toggles), TRANSITION (9-ball pattern grid), TELEOP (Classified, Overflow, Balls), ENDGAME (Park status per robot), BUZZER (wait overlay). Score cards use `min-height: var(--tap)` (48 px) to ensure reliable tap targets under pressure. Timer and scores use `font-family: var(--font-display)` with `clamp()` sizing for legibility at all viewport widths. Alliance-colored headers use a dark gradient with `env(safe-area-inset-top)` padding for notch-safe layout on tablets.
 
 ### `ref.html` / `ref-blue.html` — Field Referees
-Two large buttons: Minor Foul and Major Foul. Shows timer, both alliance scores, and penalty log. Enabled only while match is running.
+Two large solid-filled foul buttons: Minor Foul (yellow fill, `var(--yellow)`) and Major Foul (red fill, `var(--red)`). Solid fills replace the previous outlined style so buttons are unambiguous under arena lighting. Shows compact timer and both alliance scores in the header. Foul buttons have `min-height: 110px` and use `var(--font-display)` for maximum legibility on handheld devices. Timer in header uses `clamp()` for fluid sizing. Alliance-specific gradient headers with `env(safe-area-inset-top)` for notch safety.
 
 ### `headref.html` — Head Referee
-Full penalty grid with both alliances side by side. Minor Foul, Major Foul, Yellow Card, Red Card per alliance. Team picker modal for cards. Penalty log table. Post-match: Commit Scores and Mark for Replay.
+Full penalty grid with both alliances side by side. Minor Foul, Major Foul, Yellow Card, Red Card per alliance. Team picker modal for cards. Penalty log table. Post-match: Commit Scores and Mark for Replay. At viewports ≥ 900 px (tablet landscape and desktop), the layout switches to a 2-column grid: penalty buttons on the left spanning both rows, penalty log and post-match actions stacked on the right. Penalty buttons use `min-height: 68px` and display font for fast, accurate tapping. Safe-area insets applied at the bottom for tablet home-bar clearance.
 
 ### `queue.html` — Queue Display
 Large-font display for queueing area. Three sections: On Field Now, Report to Queue Now (pulsing border), Upcoming (next 2 matches). Real-time Socket.io updates.

@@ -6,13 +6,10 @@
   <title>Red Field Referee — Score Keeper</title>
   <link rel="stylesheet" href="/css/style.css">
   <style>
-    :root {
-      --red-bg: #1a0000;
-    }
-
     body {
       background: var(--red-bg);
       min-height: 100vh;
+      min-height: 100dvh;
       display: flex;
       flex-direction: column;
     }
@@ -22,9 +19,10 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      background: #2a0000;
+      background: linear-gradient(180deg, #200710, #14080b);
       border-bottom: 3px solid var(--red);
-      padding: 0.6rem 1rem;
+      padding: 0.55rem 1rem;
+      padding-top: max(0.55rem, env(safe-area-inset-top));
       position: sticky;
       top: 0;
       z-index: 100;
@@ -32,8 +30,8 @@
     }
 
     .ref-header .ref-title {
-      font-size: 1.1rem;
-      font-weight: 900;
+      font-size: clamp(1rem, 3vw, 1.35rem);
+      font-weight: 800;
       text-transform: uppercase;
       letter-spacing: 0.12em;
       color: var(--red-light);
@@ -57,8 +55,8 @@
     }
 
     .ref-header .timer-display {
-      font-size: 3.2rem;
-      font-weight: 900;
+      font-size: clamp(2.4rem, 8vw, 3.4rem);
+      font-weight: 800;
       font-variant-numeric: tabular-nums;
       color: var(--text);
       line-height: 1;
@@ -68,9 +66,10 @@
       display: flex;
       align-items: center;
       gap: 0.6rem;
+      font-family: var(--font-display);
       font-variant-numeric: tabular-nums;
-      font-weight: 900;
-      font-size: 3rem;
+      font-weight: 800;
+      font-size: clamp(2.2rem, 7vw, 3rem);
       margin-top: 0.15rem;
     }
     .header-scores .hs-red  { color: var(--red-light); }
@@ -104,11 +103,12 @@
 
     .penalty-btn-large {
       flex: 1;
-      min-height: 100px;
+      min-height: 110px;
       border: none;
-      border-radius: 12px;
-      font-size: 1.6rem;
-      font-weight: 900;
+      border-radius: 16px;
+      font-family: var(--font-display);
+      font-size: clamp(1.5rem, 5vw, 2.2rem);
+      font-weight: 800;
       text-transform: uppercase;
       letter-spacing: 0.1em;
       cursor: pointer;
@@ -129,22 +129,26 @@
     }
 
     .penalty-btn-large .btn-sub {
-      font-size: 0.8rem;
-      font-weight: 400;
-      opacity: 0.8;
+      font-family: var(--font-main);
+      font-size: clamp(0.8rem, 2.4vw, 0.95rem);
+      font-weight: 600;
+      opacity: 0.85;
       letter-spacing: 0.05em;
+      text-transform: none;
     }
 
     .btn-minor {
-      background: #b8860b;
-      color: #fff;
-      border: 2px solid #e6a800;
+      background: var(--yellow);
+      color: #191100;
+      border: 2px solid #ffd76b;
+      box-shadow: 0 3px 14px rgba(255,194,51,0.22);
     }
 
     .btn-major {
-      background: #8b0000;
+      background: var(--red);
       color: #fff;
       border: 2px solid var(--red-light);
+      box-shadow: 0 3px 14px rgba(229,35,61,0.28);
     }
 
     .penalty-btn-large:disabled {
@@ -201,7 +205,7 @@
       font-weight: 700;
     }
 
-    .log-type.minor { color: #e6a800; }
+    .log-type.minor { color: var(--yellow); }
     .log-type.major { color: var(--red-light); }
 
     .log-team {
@@ -220,7 +224,7 @@
     /* ── Abort overlay ── */
     .abort-banner {
       display: none;
-      background: #330000;
+      background: #2a0a10;
       border: 2px solid var(--red);
       border-radius: 8px;
       padding: 0.75rem 1rem;

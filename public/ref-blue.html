@@ -17,25 +17,31 @@
     /* ── Header ─────────────────────────────────────────────────────────── */
     .ref-header {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 0.65rem 1rem; background: #000814;
-      border-bottom: 2px solid var(--blue); flex-shrink: 0;
+      padding: 0.55rem 1rem;
+      padding-top: max(0.55rem, env(safe-area-inset-top));
+      background: linear-gradient(180deg, #081226, #080d18);
+      border-bottom: 2px solid var(--blue); flex-shrink: 0; gap: 0.75rem;
     }
     .ref-title {
-      font-size: 1.1rem; font-weight: 900;
-      color: var(--blue-light); letter-spacing: 0.1em;
+      font-size: clamp(1rem, 3vw, 1.35rem); font-weight: 800;
+      color: var(--blue-light); letter-spacing: 0.12em; text-transform: uppercase;
     }
     .timer-info { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 0.05rem; }
     .period-compact {
-      font-size: 0.75rem; color: var(--text2);
-      text-transform: uppercase; letter-spacing: 0.08em;
+      font-size: 0.8rem; font-weight: 700; color: var(--text2);
+      text-transform: uppercase; letter-spacing: 0.1em;
     }
     .timer-compact {
-      font-size: 3.2rem; font-weight: 900; line-height: 1;
-      color: var(--timer-normal); font-variant-numeric: tabular-nums;
+      font-size: clamp(2.4rem, 8vw, 3.4rem); font-weight: 800; line-height: 1;
+      color: var(--timer-normal);
     }
+    .timer-compact.endgame { color: var(--timer-endgame); }
+    .timer-compact.final   { color: var(--timer-final); }
     .header-scores {
       display: flex; align-items: center; gap: 0.6rem;
-      font-variant-numeric: tabular-nums; font-weight: 900; font-size: 3rem;
+      font-family: var(--font-display);
+      font-variant-numeric: tabular-nums; font-weight: 800;
+      font-size: clamp(2.2rem, 7vw, 3rem);
     }
     .hs-red  { color: var(--red-light); }
     .hs-blue { color: var(--blue-light); }
@@ -50,11 +56,12 @@
       padding: 0.75rem;
     }
     .penalty-btn-big {
-      flex: 1; min-height: 80px;
+      flex: 1; min-height: 90px;
       display: flex; flex-direction: column;
       align-items: center; justify-content: center; gap: 0.3rem;
-      border-radius: 14px; border: 3px solid transparent;
-      font-weight: 900; letter-spacing: 0.06em;
+      border-radius: 16px; border: 3px solid transparent;
+      font-family: var(--font-display);
+      font-weight: 800; letter-spacing: 0.08em;
       text-transform: uppercase; touch-action: manipulation;
       cursor: pointer; transition: filter 0.1s, transform 0.06s;
     }
@@ -71,21 +78,23 @@
 
     /* Minor = yellow */
     .btn-minor {
-      background: #2a2000; border-color: var(--yellow); color: var(--yellow);
+      background: var(--yellow); border-color: #ffd76b; color: #191100;
+      box-shadow: 0 3px 14px rgba(255,194,51,0.22);
     }
-    .btn-minor:hover:not(:disabled) { background: #3d2e00; }
+    .btn-minor:hover:not(:disabled) { background: #ffcd52; }
 
     /* Major = red */
     .btn-major {
-      background: #220000; border-color: var(--red-light); color: var(--red-light);
+      background: var(--red); border-color: var(--red-light); color: #fff;
+      box-shadow: 0 3px 14px rgba(229,35,61,0.28);
     }
-    .btn-major:hover:not(:disabled) { background: #330000; }
+    .btn-major:hover:not(:disabled) { background: #f03950; }
 
     /* ── Penalty log ─────────────────────────────────────────────────────── */
     .log-section {
       flex-shrink: 0; max-height: 28vh;
       display: flex; flex-direction: column;
-      background: #000f2a; border-top: 1px solid var(--blue-border);
+      background: #0a1220; border-top: 1px solid var(--blue-border);
     }
     .log-header {
       display: flex; align-items: center; justify-content: space-between;
@@ -126,9 +135,10 @@
     }
     .wait-overlay.hidden { display: none; }
     .wait-text {
-      font-size: clamp(1.6rem, 6vw, 2.4rem); font-weight: 900;
-      color: var(--blue-light); text-transform: uppercase; letter-spacing: 0.12em;
-      text-align: center;
+      font-family: var(--font-display);
+      font-size: clamp(1.6rem, 6vw, 2.6rem); font-weight: 800;
+      color: var(--blue-light); text-transform: uppercase; letter-spacing: 0.14em;
+      text-align: center; padding: 0 1rem;
     }
     .wait-sub {
       font-size: 0.95rem; color: var(--text2);

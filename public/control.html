@@ -15,6 +15,20 @@
       max-width: 1100px;
       margin: 0 auto;
     }
+    /* Wide screens: two columns — pipeline/motif/timer left, live scores right */
+    @media (min-width: 1000px) {
+      .ctrl-layout {
+        display: grid;
+        grid-template-columns: 1.1fr 0.9fr;
+        align-items: start;
+        max-width: 1500px;
+      }
+      .ctrl-layout > :nth-child(1),
+      .ctrl-layout > :nth-child(2),
+      .ctrl-layout > :nth-child(3),
+      .ctrl-layout > :nth-child(5) { grid-column: 1; }
+      .ctrl-layout > :nth-child(4) { grid-column: 2; grid-row: 1 / 6; }
+    }
 
     /* ── Pipeline ─────────────────────────────────────────────────────────── */
     .pipeline-row {
@@ -30,7 +44,7 @@
       transition: border-color 0.2s, background 0.2s;
     }
     .pipeline-row:last-child { margin-bottom: 0; }
-    .pipeline-row.state-on-field  { border-color: var(--green);  background: #001a00; }
+    .pipeline-row.state-on-field  { border-color: var(--green);  background: #041a0c; }
     .pipeline-row.state-queued    { border-color: var(--yellow); background: var(--yellow-bg); }
     .pipeline-row.is-loaded       { outline: 2px solid var(--blue); outline-offset: 1px; }
 
@@ -78,7 +92,7 @@
     }
     .badge-upcoming  { background: var(--bg4); color: var(--text2); }
     .badge-queued    { background: var(--yellow-bg); color: var(--yellow); border: 1px solid var(--yellow); }
-    .badge-on-field  { background: #002a00; color: var(--green); border: 1px solid var(--green); }
+    .badge-on-field  { background: #06230f; color: var(--green); border: 1px solid var(--green); }
     .badge-loaded    { background: var(--blue-bg); color: var(--blue-light); border: 1px solid var(--blue-border); margin-left: 0.35rem; }
 
     .pipeline-badges { display: flex; align-items: center; gap: 0; flex-wrap: nowrap; }
@@ -91,22 +105,23 @@
       justify-content: flex-end;
     }
     .pipeline-btn {
-      font-size: 0.8rem;
+      font-size: 0.82rem;
       font-weight: 700;
-      padding: 0.35rem 0.75rem;
-      border-radius: 6px;
+      padding: 0.5rem 0.8rem;
+      border-radius: 7px;
       white-space: nowrap;
+      min-height: 38px;
     }
     .pipeline-btn.call-queue { background: var(--yellow-bg); color: var(--yellow); border: 1px solid var(--yellow); }
-    .pipeline-btn.call-queue:hover { background: #2a2400; }
-    .pipeline-btn.set-field  { background: #002a00; color: var(--green); border: 1px solid var(--green); }
-    .pipeline-btn.set-field:hover  { background: #003a00; }
+    .pipeline-btn.call-queue:hover { background: #221a05; }
+    .pipeline-btn.set-field  { background: #06230f; color: var(--green); border: 1px solid var(--green); }
+    .pipeline-btn.set-field:hover  { background: #0a3418; }
     .pipeline-btn.load-match { background: var(--blue); color: #fff; border: 1px solid var(--blue-border); }
-    .pipeline-btn.load-match:hover { background: #0055ee; }
+    .pipeline-btn.load-match:hover { background: #2a7af0; }
     .pipeline-btn.save-match { background: var(--green); color: #000; }
-    .pipeline-btn.save-match:hover { background: #00dd44; }
+    .pipeline-btn.save-match:hover { background: #2fd870; }
     .pipeline-btn.redo-match { background: var(--yellow-bg); color: var(--yellow); border: 1px solid var(--yellow); }
-    .pipeline-btn.redo-match:hover { background: #2a2400; }
+    .pipeline-btn.redo-match:hover { background: #221a05; }
 
     /* ── Motif section ────────────────────────────────────────────────────── */
     .motif-card-inner {
@@ -126,7 +141,7 @@
       border-radius: 50%;
       flex-shrink: 0;
     }
-    .motif-dot.G { background: #00cc44; box-shadow: 0 0 10px #00cc4488; }
+    .motif-dot.G { background: #16c95c; box-shadow: 0 0 10px #16c95c88; }
     .motif-dot.P { background: #9933ff; box-shadow: 0 0 10px #9933ff88; }
     .motif-actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
     .btn-randomize {
@@ -136,7 +151,7 @@
       border-radius: 6px; border: none;
       transition: background 0.15s, box-shadow 0.15s;
     }
-    .btn-randomize:hover { background: #0055ee; }
+    .btn-randomize:hover { background: #2a7af0; }
     @keyframes motif-warn-pulse {
       0%   { background: var(--red-light); box-shadow: 0 0 0 0 rgba(255,80,80,0.7); }
       50%  { background: #ff3333;          box-shadow: 0 0 0 8px rgba(255,80,80,0); }
@@ -164,7 +179,7 @@
       border-radius: 50%;
       flex-shrink: 0;
     }
-    .btn-motif-pick .mini-dot.G { background: #00cc44; }
+    .btn-motif-pick .mini-dot.G { background: #16c95c; }
     .btn-motif-pick .mini-dot.P { background: #9933ff; }
     .motif-none-msg { color: var(--text2); font-size: 0.9rem; font-style: italic; }
 
@@ -183,15 +198,16 @@
       min-width: 130px;
     }
     .timer-btns button {
-      font-size: 0.9rem;
+      font-size: 0.95rem;
       font-weight: 700;
       padding: 0.55rem 1rem;
-      border-radius: 6px;
+      border-radius: 8px;
+      min-height: var(--tap);
     }
     .btn-start   { background: var(--green);  color: #000; }
-    .btn-start:hover { background: #00dd44; }
+    .btn-start:hover { background: #2fd870; }
     .btn-pause   { background: var(--yellow-bg); color: var(--yellow); border: 1px solid var(--yellow); }
-    .btn-resume  { background: #002a00; color: var(--green); border: 1px solid var(--green); }
+    .btn-resume  { background: #06230f; color: var(--green); border: 1px solid var(--green); }
     .btn-advance { background: var(--bg3); color: var(--text2); border: 1px solid var(--border); }
     .btn-abort   { background: var(--red-bg); color: var(--red-light); border: 1px solid var(--red-border); }
     .timer-btns button:disabled {
@@ -285,7 +301,7 @@
       color: #000;
       border-radius: 8px;
     }
-    .commit-card button:hover { background: #00dd44; }
+    .commit-card button:hover { background: #2fd870; }
 
     /* ── Next-match popup ─────────────────────────────────────────────────── */
     .nmatch-backdrop {
@@ -312,9 +328,9 @@
       display: block; font-size: 0.78rem; font-weight: 400; opacity: 0.75; margin-top: 0.2rem;
     }
     .nmatch-btn.save   { background: var(--green); color: #000; }
-    .nmatch-btn.save:hover { background: #00dd44; }
+    .nmatch-btn.save:hover { background: #2fd870; }
     .nmatch-btn.redo   { background: var(--yellow-bg); color: var(--yellow); border: 1px solid var(--yellow); }
-    .nmatch-btn.redo:hover { background: #2a2400; }
+    .nmatch-btn.redo:hover { background: #221a05; }
     .nmatch-btn.cancel { background: transparent; color: var(--text2); border: 1px solid var(--border); text-align: center; }
     .nmatch-btn.cancel:hover { background: var(--bg3); }
   </style>
@@ -327,6 +343,23 @@
 
   <div class="ctrl-layout" id="ctrl-layout"></div>
 
+  <!-- ── Next-match popup ──────────────────────────────────────────────────── -->
+  <div id="nmatch-backdrop" class="nmatch-backdrop">
+    <div class="nmatch-modal">
+      <div class="nmatch-title" id="nmatch-title">Loading next match</div>
+      <div class="nmatch-sub"  id="nmatch-sub">What do you want to do with the current match?</div>
+      <button class="nmatch-btn save"   id="nmatch-save">
+        Save the Game
+        <span class="btn-desc">Scores are final — match won't appear in the pipeline again</span>
+      </button>
+      <button class="nmatch-btn redo"   id="nmatch-redo">
+        Mark as Redo
+        <span class="btn-desc">Reset to 0-0 — match returns to the pipeline for a replay</span>
+      </button>
+      <button class="nmatch-btn cancel" id="nmatch-cancel">Cancel</button>
+    </div>
+  </div>
+
   <script src="/socket.io/socket.io.js"></script>
   <script src="/js/common.js"></script>
   <script>
@@ -337,7 +370,7 @@
     var MOTIFS = ['GPP', 'PGP', 'PPG'];
 
     // Ball colours derived from match motif (G = green, P = purple)
-    var BALL_G    = { bg: '#00cc44', bd: '#00cc44' };
+    var BALL_G    = { bg: '#16c95c', bd: '#16c95c' };
     var BALL_P    = { bg: '#9933ff', bd: '#9933ff' };
     var BALL_NONE = { bg: '#445566', bd: '#445566' };
 
@@ -1177,6 +1210,14 @@
         setMotifLocked(false);
         updateTimerButtons({ matchId: state.loadedMatchId, running: false, paused: false, matchEnded: false });
         fetchMatches();
+        // Update timer display to show the loaded match's initial period and time
+        if (data && data.period !== undefined) {
+          SK.applyTimerState(
+            { running: false, paused: false, matchEnded: false, period: data.period, timeRemaining: data.timeRemaining },
+            timerEl,
+            periodLabelEl
+          );
+        }
       });
 
       socket.on('match_abort', function () {
@@ -1208,22 +1249,5 @@
 
   })();
   </script>
-
-  <!-- ── Next-match popup ──────────────────────────────────────────────────── -->
-  <div id="nmatch-backdrop" class="nmatch-backdrop">
-    <div class="nmatch-modal">
-      <div class="nmatch-title" id="nmatch-title">Loading next match</div>
-      <div class="nmatch-sub"  id="nmatch-sub">What do you want to do with the current match?</div>
-      <button class="nmatch-btn save"   id="nmatch-save">
-        Save the Game
-        <span class="btn-desc">Scores are final — match won't appear in the pipeline again</span>
-      </button>
-      <button class="nmatch-btn redo"   id="nmatch-redo">
-        Mark as Redo
-        <span class="btn-desc">Reset to 0-0 — match returns to the pipeline for a replay</span>
-      </button>
-      <button class="nmatch-btn cancel" id="nmatch-cancel">Cancel</button>
-    </div>
-  </div>
 </body>
 </html>
