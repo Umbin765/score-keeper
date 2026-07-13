@@ -59,9 +59,8 @@
     }
     .score-card-outer {
       display: flex; flex-direction: row; align-items: stretch;
-      background: #000; border: 2px solid var(--green);
+      background: transparent; border: none;
       border-radius: 14px; min-height: 0; overflow: hidden;
-      box-shadow: 0 3px 12px rgba(22,201,92,0.18);
     }
     .score-main { flex: 2; }
     .score-split .score-card-outer { flex: 1; }
@@ -79,7 +78,7 @@
     .score-card-center {
       flex: 1; min-width: 0; display: flex; flex-direction: column;
       align-items: center; justify-content: center;
-      gap: 0.2rem; padding: 0.6rem 0; pointer-events: none; color: #fff;
+      gap: 0.2rem; padding: 0.6rem 0; pointer-events: none; color: var(--text);
     }
     .score-card-label {
       font-size: clamp(0.7rem, 2.2vw, 1rem); font-weight: 700;
