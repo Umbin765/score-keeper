@@ -692,6 +692,7 @@
       var split = document.createElement('div');
       split.className = 'score-split';
       split.appendChild(makeScoreCard('Overflow', '+' + pts.teleop_overflow + ' pts', 'teleop_overflow', state.scores));
+      split.appendChild(makeScoreCard('Balls', '+' + pts.teleop_balls + ' pts', 'teleop_balls', state.scores));
       section.appendChild(split);
 
       scorePanel.appendChild(section);
@@ -882,6 +883,7 @@
         SK.applyTimerState(ts, timerEl, periodLbl);
         SK.playBuzzer();
         state.currentPeriod = ts.period;
+        state.patternViewOpen = false;
         if (ts.period && ts.period.type === 'ENDGAME') {
           state.parkR1 = 'none';
           state.parkR2 = 'none';
@@ -893,6 +895,7 @@
         SK.applyTimerState(ts, timerEl, periodLbl);
         state.timerRunning = true;
         state.currentPeriod = ts.period;
+        state.patternViewOpen = false;
         hideWait();
         renderScoringPanel();
       });
