@@ -465,9 +465,9 @@
         return;
       }
 
-      // Pattern view during teleop — "Back to Scoring" (teleop pattern)
+      // Pattern view carried over from transition into teleop — still showing auto pattern
       if (state.patternViewOpen && ptype === 'TELEOP') {
-        renderPatternView(false);
+        renderPatternView(true);
         return;
       }
 
@@ -883,7 +883,7 @@
         SK.applyTimerState(ts, timerEl, periodLbl);
         SK.playBuzzer();
         state.currentPeriod = ts.period;
-        state.patternViewOpen = false;
+        if (!ts.period || ts.period.type !== 'TELEOP') state.patternViewOpen = false;
         if (ts.period && ts.period.type === 'ENDGAME') {
           state.parkR1 = 'none';
           state.parkR2 = 'none';
