@@ -455,7 +455,7 @@
       var inEndgame = (ptype === 'ENDGAME' || ptype === 'BUZZER');
       scoreViewBtn.disabled   = !inEndgame;
       parkViewBtn.disabled    = !inEndgame;
-      patternViewBtn.disabled = (ptype !== 'TRANSITION') && (ptype !== 'TELEOP') && !(inEndgame && state.parkViewOpen);
+      patternViewBtn.disabled = (ptype !== 'TRANSITION') && !(inEndgame && state.parkViewOpen);
 
       // Pattern view from transition — "Back to Scoring" (auto pattern)
       if (state.patternViewOpen && ptype === 'TRANSITION') {
