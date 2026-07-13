@@ -60,36 +60,35 @@
     /* Card: single green pill with + left, center info, − right */
     .score-card-outer {
       display: flex; flex-direction: row; align-items: stretch;
-      background: var(--green); border: 2px solid var(--green);
+      background: #000; border: 2px solid var(--green);
       border-radius: 14px; min-height: 0; overflow: hidden;
-      box-shadow: 0 3px 12px rgba(22,201,92,0.18); color: #04140a;
+      box-shadow: 0 3px 12px rgba(22,201,92,0.18);
     }
     .score-main { flex: 2; }
     .score-split .score-card-outer { flex: 1; }
     .score-card-outer.score-card-disabled {
-      background: var(--bg3); border-color: var(--border);
-      color: var(--text2); opacity: 0.55;
+      background: var(--bg3); border-color: var(--border); opacity: 0.55;
     }
     .score-side-btn {
       flex: 2; min-width: 0;
-      background: transparent; border: none;
-      color: inherit; font-size: 2.4rem; font-weight: 300; line-height: 1;
-      cursor: pointer; touch-action: manipulation; opacity: 0.6;
+      background: var(--green); border: none;
+      color: #04140a; font-size: 3.5rem; font-weight: 300; line-height: 1;
+      cursor: pointer; touch-action: manipulation;
       -webkit-tap-highlight-color: transparent;
     }
-    .score-side-btn:active { background: rgba(0,0,0,0.12); opacity: 1; }
+    .score-side-btn:active { background: #10a84b; }
     .score-card-center {
       flex: 1; min-width: 0; display: flex; flex-direction: column;
       align-items: center; justify-content: center;
-      gap: 0.2rem; padding: 0.6rem 0; pointer-events: none;
+      gap: 0.2rem; padding: 0.6rem 0; pointer-events: none; color: #fff;
     }
     .score-card-label {
       font-size: clamp(0.7rem, 2.2vw, 1rem); font-weight: 700;
       text-transform: uppercase; letter-spacing: 0.05em;
-      color: inherit; text-align: center; line-height: 1.2;
+      text-align: center; line-height: 1.2;
     }
     .score-card-pts {
-      font-size: clamp(0.65rem, 1.8vw, 0.85rem); color: inherit; opacity: 0.65;
+      font-size: clamp(0.65rem, 1.8vw, 0.85rem); opacity: 0.65;
     }
     .score-card-count {
       font-size: clamp(2.2rem, 10vw, 5rem); font-weight: 900;
