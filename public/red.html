@@ -57,24 +57,36 @@
       display: flex; gap: 0.6rem;
       flex: 1; min-height: 0;
     }
+    /* Wrapper that carries the flex sizing and holds the card + dec button */
+    .score-card-outer {
+      display: flex; flex-direction: column; gap: 0.3rem; min-height: 0;
+    }
+    /* Main (big) card takes more vertical space */
+    .score-main { flex: 2; }
+    /* Wrappers inside the split row share space equally */
+    .score-split .score-card-outer { flex: 1; }
     .score-card {
       display: flex; flex-direction: column; align-items: center;
       background: var(--green); border: 2px solid var(--green);
       border-radius: 14px; padding: 0.6rem 0.4rem; gap: 0.3rem;
-      min-height: 0; cursor: pointer; width: 100%;
+      min-height: 0; cursor: pointer; width: 100%; flex: 1;
       touch-action: manipulation; text-align: center; color: #04140a;
       box-shadow: 0 3px 12px rgba(22,201,92,0.18);
     }
-    /* Main (big) card takes more vertical space */
-    .score-main { flex: 2; }
-    /* Cards inside the split row share space equally */
-    .score-split .score-card { flex: 1; }
     .score-card:hover  { background: var(--green); }
     .score-card:active { background: #10a84b; border-color: #10a84b; transform: none; }
     .score-card-disabled, .score-card:disabled {
       background: var(--bg3); border-color: var(--border);
       color: var(--text2); opacity: 0.55; cursor: not-allowed;
     }
+    .score-dec-btn {
+      flex-shrink: 0; width: 100%; padding: 0.35rem 0;
+      background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 8px; color: var(--text); font-size: 1.3rem; font-weight: 700;
+      cursor: pointer; touch-action: manipulation; line-height: 1;
+    }
+    .score-dec-btn:active { background: rgba(0,0,0,0.5); }
+    .score-dec-btn:disabled { opacity: 0.3; cursor: not-allowed; }
     .score-card-label {
       font-size: clamp(0.7rem, 2.2vw, 1rem); font-weight: 700;
       text-transform: uppercase; letter-spacing: 0.05em;
@@ -559,13 +571,13 @@
       var section = document.createElement('div');
       section.className = 'score-section';
 
-      var mainCard = makeScoreCard('Classified', '+' + pts.auto_classified + ' pts', 'auto_classified', state.scores, false);
+      var mainCard = makeScoreCard('Classified', '+' + pts.auto_classified + ' pts', 'auto_classified', state.scores, false, true);
       mainCard.classList.add('score-main');
       section.appendChild(mainCard);
 
       var split = document.createElement('div');
       split.className = 'score-split';
-      split.appendChild(makeScoreCard('Overflow', '+' + pts.auto_overflow + ' pts', 'auto_overflow', state.scores, false));
+      split.appendChild(makeScoreCard('Overflow', '+' + pts.auto_overflow + ' pts', 'auto_overflow', state.scores, false, true));
       section.appendChild(split);
 
       scorePanel.appendChild(section);
@@ -685,13 +697,13 @@
       var section = document.createElement('div');
       section.className = 'score-section';
 
-      var mainCard = makeScoreCard('Classified', '+' + pts.teleop_classified + ' pts', 'teleop_classified', state.scores);
+      var mainCard = makeScoreCard('Classified', '+' + pts.teleop_classified + ' pts', 'teleop_classified', state.scores, false, true);
       mainCard.classList.add('score-main');
       section.appendChild(mainCard);
 
       var split = document.createElement('div');
       split.className = 'score-split';
-      split.appendChild(makeScoreCard('Overflow', '+' + pts.teleop_overflow + ' pts', 'teleop_overflow', state.scores));
+      split.appendChild(makeScoreCard('Overflow', '+' + pts.teleop_overflow + ' pts', 'teleop_overflow', state.scores, false, true));
       split.appendChild(makeScoreCard('Balls', '+' + pts.teleop_balls + ' pts', 'teleop_balls', state.scores));
       section.appendChild(split);
 
@@ -716,7 +728,10 @@
     }
 
     // ── Card / row builders ────────────────────────────────────────────────────
-    function makeScoreCard(label, pts, field, scores, disabled) {
+    function makeScoreCard(label, pts, field, scores, disabled, withDecrement) {
+      var outer = document.createElement('div');
+      outer.className = 'score-card-outer';
+
       var card = document.createElement('button');
       card.className = 'score-card' + (disabled ? ' score-card-disabled' : '');
       if (disabled) {
@@ -741,7 +756,17 @@
       countEl.textContent = scores[field] != null ? scores[field] : 0;
       card.appendChild(countEl);
 
-      return card;
+      outer.appendChild(card);
+
+      if (withDecrement && !disabled) {
+        var decBtn = document.createElement('button');
+        decBtn.className = 'score-dec-btn';
+        decBtn.textContent = '−';
+        decBtn.addEventListener('click', function () { sendIncrement(field, -1); });
+        outer.appendChild(decBtn);
+      }
+
+      return outer;
     }
 
     function makeToggleBtn(label, field, currentVal) {

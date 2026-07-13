@@ -55,6 +55,19 @@
       display: flex; flex-direction: column; gap: 0.75rem;
       padding: 0.75rem;
     }
+    .penalty-row {
+      display: flex; gap: 0.5rem; flex: 1; min-height: 0;
+    }
+    .penalty-dec-btn {
+      flex-shrink: 0; width: 56px;
+      border-radius: 12px; border: 1px solid rgba(255,255,255,0.15);
+      background: rgba(0,0,0,0.3); color: var(--text);
+      font-size: 2rem; font-weight: 700;
+      cursor: pointer; touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent; line-height: 1;
+    }
+    .penalty-dec-btn:active { background: rgba(0,0,0,0.5); }
+    .penalty-dec-btn:disabled { opacity: 0.25; cursor: not-allowed; }
     .penalty-btn-big {
       flex: 1; min-height: 90px;
       display: flex; flex-direction: column;
@@ -172,14 +185,20 @@
   </header>
 
   <div class="penalty-area" id="penalty-area">
-    <button class="penalty-btn-big btn-minor" id="btn-minor" type="button">
-      <span class="btn-label">MINOR FOUL</span>
-      <span class="btn-sub">+5 pts to RED</span>
-    </button>
-    <button class="penalty-btn-big btn-major" id="btn-major" type="button">
-      <span class="btn-label">MAJOR FOUL</span>
-      <span class="btn-sub">+12 pts to RED</span>
-    </button>
+    <div class="penalty-row">
+      <button class="penalty-btn-big btn-minor" id="btn-minor" type="button">
+        <span class="btn-label">MINOR FOUL</span>
+        <span class="btn-sub">+5 pts to RED</span>
+      </button>
+      <button class="penalty-dec-btn" id="btn-minor-dec" disabled title="Remove last minor foul">−</button>
+    </div>
+    <div class="penalty-row">
+      <button class="penalty-btn-big btn-major" id="btn-major" type="button">
+        <span class="btn-label">MAJOR FOUL</span>
+        <span class="btn-sub">+12 pts to RED</span>
+      </button>
+      <button class="penalty-dec-btn" id="btn-major-dec" disabled title="Remove last major foul">−</button>
+    </div>
   </div>
 
   <div class="log-section">
@@ -215,6 +234,8 @@
       matchRunning: false,
     };
 
+    var penaltyCounts = { minor: 0, major: 0 };
+
     // ── Auth gate ──────────────────────────────────────────────────────────────
     SK.mountPinPad('ref', 'Blue Field Referee').then(function () {
       SK.addLogoutButton(document.getElementById('header-right'));
@@ -224,8 +245,10 @@
     // ── Element refs ───────────────────────────────────────────────────────────
     var timerEl    = document.getElementById('timer-el');
     var periodLbl  = document.getElementById('period-label');
-    var btnMinor   = document.getElementById('btn-minor');
-    var btnMajor   = document.getElementById('btn-major');
+    var btnMinor    = document.getElementById('btn-minor');
+    var btnMajor    = document.getElementById('btn-major');
+    var btnMinorDec = document.getElementById('btn-minor-dec');
+    var btnMajorDec = document.getElementById('btn-major-dec');
     var logScroll  = document.getElementById('log-scroll');
     var logCount   = document.getElementById('log-count');
     var redScoreEl = document.getElementById('red-score');
@@ -253,6 +276,8 @@
     function init() {
       btnMinor.addEventListener('click', function () { emitPenalty('minor'); });
       btnMajor.addEventListener('click', function () { emitPenalty('major'); });
+      btnMinorDec.addEventListener('click', function () { emitRemovePenalty('minor'); });
+      btnMajorDec.addEventListener('click', function () { emitRemovePenalty('major'); });
 
       fetchTimerState();
       connectSocketEvents();
@@ -272,6 +297,12 @@
           btn.style.cursor  = 'not-allowed';
         }
       });
+      updateDecButtons();
+    }
+
+    function updateDecButtons() {
+      btnMinorDec.disabled = state.disabled || penaltyCounts.minor === 0;
+      btnMajorDec.disabled = state.disabled || penaltyCounts.major === 0;
     }
 
     // kept for internal use by showWait/hideWait — delegates to setButtonsEnabled
@@ -304,6 +335,12 @@
       });
     }
 
+    function emitRemovePenalty(type) {
+      if (!state.matchRunning && !document.getElementById('review-badge').classList.contains('visible')) { showToast('Match is not active', 'error'); return; }
+      if (!state.matchId) { showToast('No match loaded', 'error'); return; }
+      getSocket().emit('remove_penalty', { matchId: state.matchId, alliance: ALLIANCE, type: type });
+    }
+
     // ── Fetch initial state ────────────────────────────────────────────────────
     function fetchTimerState() {
       fetch('/api/timer')
@@ -333,10 +370,11 @@
         .then(function (r) { return r.json(); })
         .then(function (penalties) {
           if (!Array.isArray(penalties)) return;
-          // Show only blue alliance penalties in this ref's log
-          penalties
-            .filter(function (p) { return p.alliance === ALLIANCE; })
-            .forEach(function (p) { appendLogEntry(p, true); });
+          var mine = penalties.filter(function (p) { return p.alliance === ALLIANCE; });
+          penaltyCounts.minor = mine.filter(function (p) { return p.type === 'minor'; }).length;
+          penaltyCounts.major = mine.filter(function (p) { return p.type === 'major'; }).length;
+          updateDecButtons();
+          mine.forEach(function (p) { appendLogEntry(p, true); });
         })
         .catch(function () {});
     }
@@ -344,6 +382,8 @@
     // ── Penalty log ────────────────────────────────────────────────────────────
     function clearLog() {
       state.penaltyCount = 0;
+      penaltyCounts.minor = 0;
+      penaltyCounts.major = 0;
       while (logScroll.firstChild) logScroll.removeChild(logScroll.firstChild);
       var empty = document.createElement('div');
       empty.className = 'empty-log';
@@ -453,14 +493,25 @@
       });
 
       sock.on('penalty_added', function (entry) {
-        // Show all penalties in the log so referee can see the full picture,
-        // but only log blue-alliance penalties (fouls called against blue)
         if (entry && entry.alliance === ALLIANCE) {
+          penaltyCounts[entry.type] = (penaltyCounts[entry.type] || 0) + 1;
+          updateDecButtons();
           appendLogEntry(entry, false);
           var typeLabel = entry.type === 'major' ? 'MAJOR' : 'MINOR';
           var teamLabel = entry.teamNumber ? ' — Team ' + entry.teamNumber : '';
           showToast(typeLabel + ' foul recorded' + teamLabel, 'success');
         }
+      });
+
+      sock.on('penalty_removed', function (data) {
+        if (!data || !data.all) return;
+        var mine = data.all.filter(function (p) { return p.alliance === ALLIANCE; });
+        penaltyCounts.minor = mine.filter(function (p) { return p.type === 'minor'; }).length;
+        penaltyCounts.major = mine.filter(function (p) { return p.type === 'major'; }).length;
+        updateDecButtons();
+        clearLog();
+        mine.forEach(function (p) { appendLogEntry(p, true); });
+        showToast('Penalty removed', 'info');
       });
     }
 

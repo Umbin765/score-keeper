@@ -807,6 +807,20 @@ io.on('connection', (socket) => {
     broadcastScores(matchId);
   });
 
+  socket.on('remove_penalty', ({ matchId, alliance, type }) => {
+    if (!timer.matchId || timer.matchId !== matchId) return;
+    if (!['red', 'blue'].includes(alliance)) return;
+    if (!['minor', 'major'].includes(type)) return;
+    const last = db.prepare(
+      'SELECT id FROM penalties WHERE match_id=? AND alliance=? AND type=? ORDER BY created_at DESC LIMIT 1'
+    ).get(matchId, alliance, type);
+    if (!last) return;
+    db.prepare('DELETE FROM penalties WHERE id=?').run(last.id);
+    const penalties = db.prepare('SELECT * FROM penalties WHERE match_id=? ORDER BY created_at').all(matchId);
+    io.emit('penalty_removed', { matchId, removedId: last.id, all: penalties });
+    broadcastScores(matchId);
+  });
+
   // ── Card management ─────────────────────────────────────────────────────
 
   socket.on('add_yellow_card', ({ matchId, alliance, teamNumber }) => {

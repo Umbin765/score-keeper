@@ -101,6 +101,30 @@
       flex: 1;
     }
 
+    .penalty-row {
+      display: flex;
+      gap: 0.5rem;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .penalty-dec-btn {
+      flex-shrink: 0;
+      width: 56px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.15);
+      background: rgba(0,0,0,0.3);
+      color: var(--text);
+      font-size: 2rem;
+      font-weight: 700;
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      line-height: 1;
+    }
+    .penalty-dec-btn:active { background: rgba(0,0,0,0.5); }
+    .penalty-dec-btn:disabled { opacity: 0.25; cursor: not-allowed; }
+
     .penalty-btn-large {
       flex: 1;
       min-height: 110px;
@@ -274,14 +298,20 @@
     <div class="abort-banner" id="abort-banner">Match aborted — waiting for next match</div>
 
     <div class="penalty-buttons" id="penalty-buttons">
-      <button class="penalty-btn-large btn-minor" id="btn-minor" disabled>
-        Minor Foul
-        <span class="btn-sub">+5 pts to Blue</span>
-      </button>
-      <button class="penalty-btn-large btn-major" id="btn-major" disabled>
-        Major Foul
-        <span class="btn-sub">+15 pts to Blue</span>
-      </button>
+      <div class="penalty-row">
+        <button class="penalty-btn-large btn-minor" id="btn-minor" disabled>
+          Minor Foul
+          <span class="btn-sub">+5 pts to Blue</span>
+        </button>
+        <button class="penalty-dec-btn" id="btn-minor-dec" disabled title="Remove last minor foul">−</button>
+      </div>
+      <div class="penalty-row">
+        <button class="penalty-btn-large btn-major" id="btn-major" disabled>
+          Major Foul
+          <span class="btn-sub">+15 pts to Blue</span>
+        </button>
+        <button class="penalty-dec-btn" id="btn-major-dec" disabled title="Remove last major foul">−</button>
+      </div>
     </div>
 
     <div class="log-section">
@@ -316,6 +346,10 @@
     var blueScoreEl  = document.getElementById('blue-score');
     var btnMinor     = document.getElementById('btn-minor');
     var btnMajor     = document.getElementById('btn-major');
+    var btnMinorDec  = document.getElementById('btn-minor-dec');
+    var btnMajorDec  = document.getElementById('btn-major-dec');
+
+    var penaltyCounts = { minor: 0, major: 0 };
     var logBody      = document.getElementById('log-body');
     var logEmpty     = document.getElementById('log-empty');
     var abortBanner  = document.getElementById('abort-banner');
@@ -333,12 +367,21 @@
 
       btnMinor.addEventListener('click', function () { emitPenalty('minor'); });
       btnMajor.addEventListener('click', function () { emitPenalty('major'); });
+      btnMinorDec.addEventListener('click', function () { emitRemovePenalty('minor'); });
+      btnMajorDec.addEventListener('click', function () { emitRemovePenalty('major'); });
     }
 
     // ── Enable / disable buttons ───────────────────────────────────────────────
     function setButtonsEnabled(enabled) {
       btnMinor.disabled = !enabled;
       btnMajor.disabled = !enabled;
+      btnMinorDec.disabled = !enabled || penaltyCounts.minor === 0;
+      btnMajorDec.disabled = !enabled || penaltyCounts.major === 0;
+    }
+
+    function updateDecButtons() {
+      btnMinorDec.disabled = btnMinor.disabled || penaltyCounts.minor === 0;
+      btnMajorDec.disabled = btnMajor.disabled || penaltyCounts.major === 0;
     }
 
     // ── Penalty emission ───────────────────────────────────────────────────────
@@ -358,6 +401,13 @@
         teamNumber: null,
         type: type,
       });
+    }
+
+    function emitRemovePenalty(type) {
+      if (!matchRunning && !document.getElementById('review-badge').classList.contains('visible')) { window.showToast('Match is not active', 'error'); return; }
+      if (!state.matchId) { window.showToast('No match loaded', 'error'); return; }
+      if (state.aborted)  { window.showToast('Match aborted', 'error'); return; }
+      getSocket().emit('remove_penalty', { matchId: state.matchId, alliance: 'red', type: type });
     }
 
     // ── Fetch timer state ──────────────────────────────────────────────────────
@@ -384,8 +434,10 @@
         .then(function (r) { return r.json(); })
         .then(function (penalties) {
           if (!Array.isArray(penalties)) return;
-          // Show only red alliance penalties in this view
           var redPenalties = penalties.filter(function (p) { return p.alliance === 'red'; });
+          penaltyCounts.minor = redPenalties.filter(function (p) { return p.type === 'minor'; }).length;
+          penaltyCounts.major = redPenalties.filter(function (p) { return p.type === 'major'; }).length;
+          updateDecButtons();
           redPenalties.forEach(function (p) {
             addLogEntry({
               time: formatMatchTime(p.match_time),
@@ -487,6 +539,8 @@
         if (data && data.matchId) {
           matchRunning = false;
           state.matchId = data.matchId;
+          penaltyCounts.minor = 0;
+          penaltyCounts.major = 0;
           state.aborted = false;
           abortBanner.classList.remove('visible');
           document.getElementById('review-badge').classList.remove('visible');
@@ -501,17 +555,30 @@
       });
 
       sock.on('penalty_added', function (data) {
-        // data shape: { matchId, penalty, all }
         var p = data && (data.penalty || data);
-        if (!p) return;
-        // Only show red alliance penalties in this log
-        if (p.alliance !== 'red') return;
+        if (!p || p.alliance !== 'red') return;
+        penaltyCounts[p.type] = (penaltyCounts[p.type] || 0) + 1;
+        updateDecButtons();
         addLogEntry({
           time: formatMatchTime(p.match_time),
           type: p.type,
           teamNumber: p.team_number,
         });
         window.showToast('RED ' + (p.type || 'foul').toUpperCase() + ' called', 'error');
+      });
+
+      sock.on('penalty_removed', function (data) {
+        if (!data || !data.all) return;
+        var redPenalties = data.all.filter(function (p) { return p.alliance === 'red'; });
+        penaltyCounts.minor = redPenalties.filter(function (p) { return p.type === 'minor'; }).length;
+        penaltyCounts.major = redPenalties.filter(function (p) { return p.type === 'major'; }).length;
+        updateDecButtons();
+        // Rebuild log from remaining penalties
+        clearLog();
+        redPenalties.forEach(function (p) {
+          addLogEntry({ time: formatMatchTime(p.match_time), type: p.type, teamNumber: p.team_number });
+        });
+        window.showToast('RED penalty removed', 'info');
       });
     }
 
