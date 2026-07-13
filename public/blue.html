@@ -58,32 +58,43 @@
       flex: 1; min-height: 0;
     }
     .score-card-outer {
-      display: flex; flex-direction: row; gap: 0.3rem; min-height: 0;
+      display: flex; flex-direction: row; align-items: stretch;
+      background: var(--green); border: 2px solid var(--green);
+      border-radius: 14px; min-height: 0; overflow: hidden;
+      box-shadow: 0 3px 12px rgba(22,201,92,0.18); color: #04140a;
     }
     .score-main { flex: 2; }
     .score-split .score-card-outer { flex: 1; }
-    .score-card {
-      display: flex; flex-direction: column; align-items: center;
-      background: var(--green); border: 2px solid var(--green);
-      border-radius: 14px; padding: 0.6rem 0.4rem; gap: 0.3rem;
-      min-height: 0; cursor: pointer; flex: 1;
-      touch-action: manipulation; text-align: center; color: #04140a;
-      box-shadow: 0 3px 12px rgba(22,201,92,0.18);
-    }
-    .score-card:hover  { background: var(--green); }
-    .score-card:active { background: #10a84b; border-color: #10a84b; transform: none; }
-    .score-card-disabled, .score-card:disabled {
+    .score-card-outer.score-card-disabled {
       background: var(--bg3); border-color: var(--border);
-      color: var(--text2); opacity: 0.55; cursor: not-allowed;
+      color: var(--text2); opacity: 0.55;
     }
-    .score-dec-btn {
-      flex-shrink: 0; width: 52px;
-      background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.12);
-      border-radius: 12px; color: var(--text); font-size: 1.6rem; font-weight: 700;
-      cursor: pointer; touch-action: manipulation; line-height: 1;
+    .score-side-btn {
+      flex-shrink: 0; width: 56px;
+      background: transparent; border: none;
+      color: inherit; font-size: 2.2rem; font-weight: 300; line-height: 1;
+      cursor: pointer; touch-action: manipulation; opacity: 0.6;
+      -webkit-tap-highlight-color: transparent;
     }
-    .score-dec-btn:active { background: rgba(0,0,0,0.5); }
-    .score-dec-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+    .score-side-btn:active { background: rgba(0,0,0,0.12); opacity: 1; }
+    .score-card-center {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 0.2rem; padding: 0.6rem 0; pointer-events: none;
+    }
+    .score-card-label {
+      font-size: clamp(0.7rem, 2.2vw, 1rem); font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      color: inherit; text-align: center; line-height: 1.2;
+    }
+    .score-card-pts {
+      font-size: clamp(0.65rem, 1.8vw, 0.85rem); color: inherit; opacity: 0.65;
+    }
+    .score-card-count {
+      font-size: clamp(2.2rem, 10vw, 5rem); font-weight: 900;
+      font-variant-numeric: tabular-nums; line-height: 1;
+    }
+    .score-split .score-card-count { font-size: clamp(1.8rem, 7vw, 3.5rem); }
     .score-card-label {
       font-size: clamp(0.7rem, 2.2vw, 1rem); font-weight: 700;
       text-transform: uppercase; letter-spacing: 0.05em;
@@ -726,37 +737,40 @@
     // ── Card / row builders ────────────────────────────────────────────────────
     function makeScoreCard(label, pts, field, scores, disabled, withDecrement) {
       var outer = document.createElement('div');
-      outer.className = 'score-card-outer';
+      outer.className = 'score-card-outer' + (disabled ? ' score-card-disabled' : '');
 
-      var card = document.createElement('button');
-      card.className = 'score-card' + (disabled ? ' score-card-disabled' : '');
-      if (disabled) {
-        card.disabled = true;
-      } else {
-        card.addEventListener('click', function () { sendIncrement(field, 1); });
+      if (!disabled) {
+        var incBtn = document.createElement('button');
+        incBtn.className = 'score-side-btn';
+        incBtn.textContent = '+';
+        incBtn.addEventListener('click', function () { sendIncrement(field, 1); });
+        outer.appendChild(incBtn);
       }
+
+      var center = document.createElement('div');
+      center.className = 'score-card-center';
 
       var labelEl = document.createElement('div');
       labelEl.className = 'score-card-label';
       labelEl.textContent = label;
-      card.appendChild(labelEl);
+      center.appendChild(labelEl);
 
       var ptsEl = document.createElement('div');
       ptsEl.className = 'score-card-pts';
       ptsEl.textContent = pts;
-      card.appendChild(ptsEl);
+      center.appendChild(ptsEl);
 
       var countEl = document.createElement('div');
       countEl.className = 'score-card-count';
       countEl.id = 'field-' + field;
       countEl.textContent = scores[field] != null ? scores[field] : 0;
-      card.appendChild(countEl);
+      center.appendChild(countEl);
 
-      outer.appendChild(card);
+      outer.appendChild(center);
 
       if (withDecrement && !disabled) {
         var decBtn = document.createElement('button');
-        decBtn.className = 'score-dec-btn';
+        decBtn.className = 'score-side-btn';
         decBtn.textContent = '−';
         decBtn.addEventListener('click', function () { sendIncrement(field, -1); });
         outer.appendChild(decBtn);
