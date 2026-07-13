@@ -71,15 +71,15 @@
       color: var(--text2); opacity: 0.55;
     }
     .score-side-btn {
-      flex-shrink: 0; width: 56px;
+      flex: 2; min-width: 0;
       background: transparent; border: none;
-      color: inherit; font-size: 2.2rem; font-weight: 300; line-height: 1;
+      color: inherit; font-size: 2.4rem; font-weight: 300; line-height: 1;
       cursor: pointer; touch-action: manipulation; opacity: 0.6;
       -webkit-tap-highlight-color: transparent;
     }
     .score-side-btn:active { background: rgba(0,0,0,0.12); opacity: 1; }
     .score-card-center {
-      flex: 1; display: flex; flex-direction: column;
+      flex: 1; min-width: 0; display: flex; flex-direction: column;
       align-items: center; justify-content: center;
       gap: 0.2rem; padding: 0.6rem 0; pointer-events: none;
     }
@@ -740,13 +740,13 @@
       var outer = document.createElement('div');
       outer.className = 'score-card-outer' + (disabled ? ' score-card-disabled' : '');
 
-      // + button (left)
-      if (!disabled) {
-        var incBtn = document.createElement('button');
-        incBtn.className = 'score-side-btn';
-        incBtn.textContent = '+';
-        incBtn.addEventListener('click', function () { sendIncrement(field, 1); });
-        outer.appendChild(incBtn);
+      // − button (left)
+      if (withDecrement && !disabled) {
+        var decBtn = document.createElement('button');
+        decBtn.className = 'score-side-btn';
+        decBtn.textContent = '−';
+        decBtn.addEventListener('click', function () { sendIncrement(field, -1); });
+        outer.appendChild(decBtn);
       }
 
       // Center: label, pts, count
@@ -771,13 +771,13 @@
 
       outer.appendChild(center);
 
-      // − button (right)
-      if (withDecrement && !disabled) {
-        var decBtn = document.createElement('button');
-        decBtn.className = 'score-side-btn';
-        decBtn.textContent = '−';
-        decBtn.addEventListener('click', function () { sendIncrement(field, -1); });
-        outer.appendChild(decBtn);
+      // + button (right)
+      if (!disabled) {
+        var incBtn = document.createElement('button');
+        incBtn.className = 'score-side-btn';
+        incBtn.textContent = '+';
+        incBtn.addEventListener('click', function () { sendIncrement(field, 1); });
+        outer.appendChild(incBtn);
       }
 
       return outer;
