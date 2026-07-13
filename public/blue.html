@@ -701,7 +701,6 @@
       var split = document.createElement('div');
       split.className = 'score-split';
       split.appendChild(makeScoreCard('Overflow', '+' + pts.teleop_overflow + ' pts', 'teleop_overflow', state.scores, false, true));
-      split.appendChild(makeScoreCard('Balls', '+' + pts.teleop_balls + ' pts', 'teleop_balls', state.scores));
       section.appendChild(split);
 
       scorePanel.appendChild(section);
