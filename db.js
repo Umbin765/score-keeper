@@ -150,6 +150,16 @@ function initSchema(db) {
     db.prepare("ALTER TABLE teams ADD COLUMN opr REAL NOT NULL DEFAULT 0").run();
   } catch (_) { /* column already exists */ }
 
+  // Migrate TRANSITION duration from old default (8s) to current default (15s)
+  db.prepare("UPDATE period_config SET duration=15 WHERE type='TRANSITION' AND duration=8").run();
+
+  // Migrate RP thresholds from old defaults to the SEC Game Manual's values
+  // (Movement RP = LEAVE + BASE at 60/85; Pattern RP = PATTERN points at 50/72)
+  db.prepare("UPDATE settings SET value='60' WHERE key='rp_park_threshold_1' AND value='63'").run();
+  db.prepare("UPDATE settings SET value='85' WHERE key='rp_park_threshold_2' AND value='90'").run();
+  db.prepare("UPDATE settings SET value='50' WHERE key='rp_pattern_threshold_1' AND value='23'").run();
+  db.prepare("UPDATE settings SET value='72' WHERE key='rp_pattern_threshold_2' AND value='33'").run();
+
   runSchema(db, `
     CREATE TABLE IF NOT EXISTS alliance_selections (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -171,6 +181,40 @@ function initSchema(db) {
       UNIQUE(bracket_round, bracket_slot)
     )
   `);
+
+  runSchema(db, `
+    CREATE TABLE IF NOT EXISTS sessions (
+      sid TEXT PRIMARY KEY,
+      sess TEXT NOT NULL,
+      expires INTEGER NOT NULL
+    )
+  `);
+
+  runSchema(db, `
+    CREATE TABLE IF NOT EXISTS notes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      match_id INTEGER NOT NULL REFERENCES matches(id),
+      alliance TEXT CHECK(alliance IN ('red','blue')),
+      team_number INTEGER,
+      note TEXT NOT NULL,
+      author TEXT NOT NULL DEFAULT 'headref',
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+    )
+  `);
+
+  runSchema(db, `
+    CREATE TABLE IF NOT EXISTS rp_overrides (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      match_id INTEGER NOT NULL REFERENCES matches(id),
+      alliance TEXT NOT NULL CHECK(alliance IN ('red','blue')),
+      category TEXT NOT NULL CHECK(category IN ('win','park','pattern','ball')),
+      mode TEXT NOT NULL CHECK(mode IN ('grant','exclude','override')),
+      value REAL,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      UNIQUE(match_id, alliance, category)
+    )
+  `);
 }
 
 const DEFAULT_SETTINGS = {
@@ -180,7 +224,6 @@ const DEFAULT_SETTINGS = {
   pts_auto_pattern: '2',
   pts_teleop_classified: '3',
   pts_teleop_overflow: '1',
-  pts_teleop_balls: '1',
   pts_park_partial: '5',
   pts_park_full: '10',
   pts_park_bonus: '10',
@@ -189,10 +232,10 @@ const DEFAULT_SETTINGS = {
   rp_win: '4',
   rp_tie: '2',
   rp_loss: '0',
-  rp_park_threshold_1: '63',
-  rp_park_threshold_2: '90',
-  rp_pattern_threshold_1: '23',
-  rp_pattern_threshold_2: '33',
+  rp_park_threshold_1: '60',
+  rp_park_threshold_2: '85',
+  rp_pattern_threshold_1: '50',
+  rp_pattern_threshold_2: '72',
   rp_ball_threshold_1: '210',
   rp_ball_threshold_2: '300',
   matches_per_team: '4',
@@ -208,7 +251,7 @@ const DEFAULT_SETTINGS = {
 
 const DEFAULT_PERIODS = [
   { position: 1, name: 'AUTO',       duration: 60,  type: 'AUTO',       group_id: null, group_repeats: 1 },
-  { position: 2, name: 'TRANSITION', duration: 8,   type: 'TRANSITION', group_id: null, group_repeats: 1 },
+  { position: 2, name: 'TRANSITION', duration: 15,  type: 'TRANSITION', group_id: null, group_repeats: 1 },
   { position: 3, name: 'TELEOP',     duration: 110, type: 'TELEOP',     group_id: 1,    group_repeats: 5 },
   { position: 4, name: 'ENDGAME',    duration: 10,  type: 'ENDGAME',    group_id: 1,    group_repeats: 5 },
   { position: 5, name: 'BUZZER',     duration: 10,  type: 'BUZZER',     group_id: 1,    group_repeats: 5 },
@@ -307,7 +350,6 @@ function getFullScore(db, matchId, alliance) {
   total += scores.auto_pattern * pv.auto_pattern;
   total += scores.teleop_classified * pv.teleop_classified;
   total += scores.teleop_overflow * pv.teleop_overflow;
-  total += scores.teleop_balls * pv.teleop_balls;
   total += (scores.teleop_pattern || 0) * pv.auto_pattern;
 
   let parkScore = 0;
@@ -330,8 +372,7 @@ function getFullScore(db, matchId, alliance) {
                     + leaveCount             * pv.auto_leave
                     + scores.auto_pattern    * pv.auto_pattern;
   const teleopTotal = scores.teleop_classified * pv.teleop_classified
-                    + scores.teleop_overflow   * pv.teleop_overflow
-                    + scores.teleop_balls      * pv.teleop_balls;
+                    + scores.teleop_overflow   * pv.teleop_overflow;
 
   return {
     total,
@@ -347,7 +388,6 @@ function getFullScore(db, matchId, alliance) {
     teleop_pattern_balls: scores.teleop_pattern_balls || '000000000',
     teleop_classified: scores.teleop_classified,
     teleop_overflow: scores.teleop_overflow,
-    teleop_balls: scores.teleop_balls,
     penalties: penaltyPts,
     breakdown: {
       auto_classified: scores.auto_classified,
@@ -356,7 +396,7 @@ function getFullScore(db, matchId, alliance) {
       auto_pattern: scores.auto_pattern,
       teleop_classified: scores.teleop_classified,
       teleop_overflow: scores.teleop_overflow,
-      teleop_balls: scores.teleop_balls,
+      teleop_pattern: scores.teleop_pattern || 0,
       park_score: parkScore,
       penalty_pts: penaltyPts,
     },
@@ -367,7 +407,6 @@ function getFullScore(db, matchId, alliance) {
       auto_pattern:    scores.auto_pattern    * pv.auto_pattern,
       teleop_classified: scores.teleop_classified * pv.teleop_classified,
       teleop_overflow:   scores.teleop_overflow   * pv.teleop_overflow,
-      teleop_balls:      scores.teleop_balls      * pv.teleop_balls,
       teleop_pattern:    (scores.teleop_pattern || 0) * pv.auto_pattern,
       park:     parkScore,
       penalties: penaltyPts,
@@ -379,6 +418,17 @@ function getFullScore(db, matchId, alliance) {
   };
 }
 
+/**
+ * True when an alliance has any red card recorded in match_scores.red_cards
+ * for this match (any one team is enough — per the SEC Game Manual, a single
+ * confirmed red card ends the match immediately). Used to force an early
+ * match end and to auto-grant the opposing alliance's full RP.
+ */
+function isAllianceRedCarded(db, matchId, alliance) {
+  const row = db.prepare('SELECT red_cards FROM match_scores WHERE match_id=? AND alliance=?').get(matchId, alliance);
+  return JSON.parse(row?.red_cards || '[]').length > 0;
+}
+
 module.exports = {
   getDb,
   getSettingsMap,
@@ -386,4 +436,5 @@ module.exports = {
   expandPeriods,
   ensureMatchScores,
   getFullScore,
+  isAllianceRedCarded,
 };

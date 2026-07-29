@@ -426,7 +426,8 @@
     var startBtn, pauseBtn, resumeBtn, abortBtn, advanceBtn, revealBtn;
     var redTotal, blueTotal, redBreakdown, blueBreakdown;
     var redRpPanel, blueRpPanel;
-    var redPatternRow, bluePatternRow;   // 9-element NodeLists filled at build time
+    var redPatternRow, bluePatternRow;           // auto pattern ball rows
+    var redTeleopPatternRow, blueTeleopPatternRow; // teleop pattern ball rows
     var commitCard, historyCard, historyList;
 
     // ── Next-match popup ───────────────────────────────────────────────────────
@@ -629,24 +630,40 @@
         colLbl.className = 'pattern-col-label ' + colorCls + '-text';
         colLbl.textContent = colorCls.toUpperCase();
         col.appendChild(colLbl);
-        var row = document.createElement('div');
-        row.className = 'ctrl-pattern-balls';
-        for (var bi = 0; bi < 9; bi++) {
-          var ball = document.createElement('div');
-          ball.className = 'ctrl-pattern-ball';
-          var c = getBallColor(bi, state.currentMotif);
-          ball.style.background  = c.bg;
-          ball.style.borderColor = c.bd;
-          row.appendChild(ball);
+
+        function makeBallRow(phaseLabel) {
+          var wrap = document.createElement('div');
+          wrap.style.cssText = 'margin-bottom:0.25rem';
+          var lbl = document.createElement('div');
+          lbl.style.cssText = 'font-size:0.65rem;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px';
+          lbl.textContent = phaseLabel;
+          wrap.appendChild(lbl);
+          var row = document.createElement('div');
+          row.className = 'ctrl-pattern-balls';
+          for (var bi = 0; bi < 9; bi++) {
+            var ball = document.createElement('div');
+            ball.className = 'ctrl-pattern-ball';
+            var c = getBallColor(bi, state.currentMotif);
+            ball.style.background  = c.bg;
+            ball.style.borderColor = c.bd;
+            row.appendChild(ball);
+          }
+          wrap.appendChild(row);
+          col.appendChild(wrap);
+          return row;
         }
-        col.appendChild(row);
-        return { col: col, ballRow: row };
+
+        var autoRow   = makeBallRow('Auto');
+        var teleopRow = makeBallRow('Teleop');
+        return { col: col, ballRow: autoRow, teleopBallRow: teleopRow };
       }
 
       var redCol  = makePatternCol('red');
       var blueCol = makePatternCol('blue');
-      redPatternRow  = redCol.ballRow;
-      bluePatternRow = blueCol.ballRow;
+      redPatternRow        = redCol.ballRow;
+      bluePatternRow       = blueCol.ballRow;
+      redTeleopPatternRow  = redCol.teleopBallRow;
+      blueTeleopPatternRow = blueCol.teleopBallRow;
       patternAlliances.appendChild(redCol.col);
       patternAlliances.appendChild(blueCol.col);
       patternSection.appendChild(patternAlliances);
@@ -1091,6 +1108,8 @@
       renderBreakdown(blueBreakdown, blue, 'BLUE');
       if (red.pattern_balls  != null) applyPatternRow(redPatternRow,  red.pattern_balls);
       if (blue.pattern_balls != null) applyPatternRow(bluePatternRow, blue.pattern_balls);
+      if (red.teleop_pattern_balls  != null) applyPatternRow(redTeleopPatternRow,  red.teleop_pattern_balls);
+      if (blue.teleop_pattern_balls != null) applyPatternRow(blueTeleopPatternRow, blue.teleop_pattern_balls);
       renderRpPanel(redRpPanel,  data.redRP  || {}, 'RED');
       renderRpPanel(blueRpPanel, data.blueRP || {}, 'BLUE');
     }
@@ -1214,7 +1233,7 @@
       ['auto_classified','Auto Classified'], ['auto_overflow','Auto Overflow'],
       ['auto_leave_r1','R1 Left Zone'], ['auto_leave_r2','R2 Left Zone'],
       ['auto_pattern','Auto Pattern'], ['teleop_classified','Teleop Classified'],
-      ['teleop_overflow','Teleop Overflow'], ['teleop_balls','Teleop Balls'],
+      ['teleop_overflow','Teleop Overflow'],
       ['teleop_pattern','Teleop Pattern']
     ];
 

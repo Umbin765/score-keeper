@@ -87,7 +87,9 @@
     .schedule-wrap { margin-top: 1.25rem; overflow-x: auto; }
 
     /* ── Winner cell highlight ── */
-    td.winner-cell { outline: 2px solid var(--green); border-radius: 4px; }
+    .winner-wrap { display: inline-flex; gap: 4px; align-items: center; padding: 2px 6px; border-radius: 6px; }
+    .winner-wrap.red  { border: 2px solid var(--red);        background: rgba(237,28,36,0.12); }
+    .winner-wrap.blue { border: 2px solid var(--blue-light); background: rgba(0,102,179,0.15); }
 
     /* ── State chips ── */
     .match-state-chip {
@@ -231,13 +233,17 @@
       return el;
     }
 
+    var scoresMap = {}; // matchId → { red, blue }
+
     function adaptMatch(m) {
       return {
+        id: m.id,
         matchNumber: m.match_number,
         state: m.state,
         winner: m.winner || null,
         red:  [m.red1_team  && m.red1_team.number,  m.red2_team  && m.red2_team.number ].filter(Boolean),
         blue: [m.blue1_team && m.blue1_team.number, m.blue2_team && m.blue2_team.number].filter(Boolean),
+        scores: scoresMap[m.id] || null,
       };
     }
 
@@ -364,17 +370,29 @@
         var numTd = document.createElement('td');
         numTd.textContent = 'M' + (m.matchNumber || '?');
         var redTd = document.createElement('td');
-        (m.red || []).forEach(function (t) {
-          var c = teamChip(t, 'red'); c.style.marginRight = '4px'; redTd.appendChild(c);
-        });
-        if (m.winner === 'red') redTd.classList.add('winner-cell');
+        var redWrap = document.createElement('div');
+        redWrap.className = 'winner-wrap' + (m.winner === 'red' ? ' red' : '');
+        (m.red || []).forEach(function (t) { redWrap.appendChild(teamChip(t, 'red')); });
+        redTd.appendChild(redWrap);
+
         var blueTd = document.createElement('td');
-        (m.blue || []).forEach(function (t) {
-          var c = teamChip(t, 'blue'); c.style.marginRight = '4px'; blueTd.appendChild(c);
-        });
-        if (m.winner === 'blue') blueTd.classList.add('winner-cell');
+        var blueWrap = document.createElement('div');
+        blueWrap.className = 'winner-wrap' + (m.winner === 'blue' ? ' blue' : '');
+        (m.blue || []).forEach(function (t) { blueWrap.appendChild(teamChip(t, 'blue')); });
+        blueTd.appendChild(blueWrap);
         var resTd = document.createElement('td');
-        resTd.appendChild(stateChip(m.state, m.winner));
+        if (m.state === 'COMPLETED' && m.scores) {
+          var rs = document.createElement('span');
+          rs.style.cssText = 'color:var(--red-light);font-weight:700;font-variant-numeric:tabular-nums;';
+          rs.textContent = m.scores.red;
+          var dash = document.createTextNode(' – ');
+          var bs = document.createElement('span');
+          bs.style.cssText = 'color:var(--blue-light);font-weight:700;font-variant-numeric:tabular-nums;';
+          bs.textContent = m.scores.blue;
+          resTd.appendChild(rs); resTd.appendChild(dash); resTd.appendChild(bs);
+        } else {
+          resTd.appendChild(stateChip(m.state, m.winner));
+        }
         tr.appendChild(numTd); tr.appendChild(redTd);
         tr.appendChild(blueTd); tr.appendChild(resTd);
         scheduleBody.appendChild(tr);
@@ -436,16 +454,23 @@
     }
 
     // ── Fetch ──────────────────────────────────────────────────────────────────
+    function fetchMatchesAndScores() {
+      return Promise.all([
+        fetch('/api/matches').then(function (r) { return r.ok ? r.json() : []; }),
+        fetch('/api/results').then(function (r) { return r.ok ? r.json() : {}; }),
+      ]).then(function (results) {
+        scoresMap = results[1] || {};
+        renderMatches(results[0]);
+      }).catch(function () {});
+    }
+
     function fetchAll() {
       fetch('/api/rankings')
         .then(function (r) { return r.ok ? r.json() : []; })
         .then(renderRankings)
         .catch(function () {});
 
-      fetch('/api/matches')
-        .then(function (r) { return r.ok ? r.json() : []; })
-        .then(renderMatches)
-        .catch(function () {});
+      fetchMatchesAndScores();
 
       fetch('/api/bracket')
         .then(function (r) { return r.ok ? r.json() : null; })
@@ -461,13 +486,8 @@
         else fetch('/api/rankings').then(function (r) { return r.ok ? r.json() : []; }).then(renderRankings).catch(function () {});
       });
 
-      socket.on('queue_update', function () {
-        fetch('/api/matches').then(function (r) { return r.ok ? r.json() : []; }).then(renderMatches).catch(function () {});
-      });
-
-      socket.on('match_state_change', function () {
-        fetch('/api/matches').then(function (r) { return r.ok ? r.json() : []; }).then(renderMatches).catch(function () {});
-      });
+      socket.on('queue_update', fetchMatchesAndScores);
+      socket.on('match_state_change', fetchMatchesAndScores);
 
       socket.on('bracket_update', function (data) {
         renderBracket(data);

@@ -105,23 +105,96 @@ function bracket8() {
   ];
 }
 
-/** Get full bracket state for API. */
+/**
+ * Resolve an alliance number to its captain/partner team ids + numbers via
+ * alliance_selections. Returns null if the alliance has no selection saved yet.
+ */
+function getAllianceRoster(db, allianceNumber) {
+  if (allianceNumber == null) return null;
+  const row = db.prepare(`
+    SELECT a.captain_team, a.partner_team,
+           t1.number as captain_number, t2.number as partner_number
+    FROM alliance_selections a
+    LEFT JOIN teams t1 ON t1.id = a.captain_team
+    LEFT JOIN teams t2 ON t2.id = a.partner_team
+    WHERE a.alliance_number = ?
+  `).get(allianceNumber);
+  return row || null;
+}
+
+function formatAllianceLabel(allianceNumber, roster) {
+  if (allianceNumber == null) return null;
+  const teamNumbers = roster ? [roster.captain_number, roster.partner_number].filter(Boolean) : [];
+  return teamNumbers.length ? ('A' + allianceNumber + ' (' + teamNumbers.join(', ') + ')') : ('Alliance ' + allianceNumber);
+}
+
+/**
+ * Get full bracket state for API. Rows are ordered by insertion order
+ * (bm.id), which already matches the chronological round sequence each
+ * bracketN() slot list was built in — callers should preserve this order
+ * rather than re-sorting by round-name text.
+ *
+ * Includes both the raw fields (red_alliance, blue_alliance, winner_alliance,
+ * bracket_round — used by the admin bracket-management UI and public.html)
+ * and display-ready camelCase fields (redAlliance, blueAlliance, matchNumber,
+ * redScore, blueScore, winner — used by bracket.html).
+ */
 function getBracket(db) {
-  return db.prepare(`
-    SELECT bm.*, m.state as match_state
+  const rows = db.prepare(`
+    SELECT bm.*, m.state as match_state, m.match_number as match_number
     FROM bracket_matches bm
     LEFT JOIN matches m ON m.id = bm.match_id
     ORDER BY bm.id
   `).all();
+
+  // Lazily required to avoid a require cycle at module-load time (db.js does
+  // not require bracket.js, so this is safe, but keeping it function-local
+  // makes that invariant obvious).
+  const { getFullScore } = require('./db');
+
+  return rows.map((row) => {
+    const redRoster = getAllianceRoster(db, row.red_alliance);
+    const blueRoster = getAllianceRoster(db, row.blue_alliance);
+
+    let redScore = null, blueScore = null;
+    if (row.match_id) {
+      redScore = getFullScore(db, row.match_id, 'red').total;
+      blueScore = getFullScore(db, row.match_id, 'blue').total;
+    }
+
+    let winner = null;
+    if (row.winner_alliance != null) {
+      if (row.winner_alliance === row.red_alliance) winner = 'red';
+      else if (row.winner_alliance === row.blue_alliance) winner = 'blue';
+    }
+
+    return {
+      ...row,
+      redAlliance: formatAllianceLabel(row.red_alliance, redRoster),
+      blueAlliance: formatAllianceLabel(row.blue_alliance, blueRoster),
+      matchNumber: row.match_number,
+      redScore,
+      blueScore,
+      winner,
+    };
+  });
 }
 
-/** After a bracket match result is recorded, advance winner/loser. */
+/** Record the winner of a bracket match. Does not auto-advance participants
+ * into later rounds — see /api/bracket/matches/:id/assign, which the admin
+ * "Bracket Matches" UI uses to route a recorded winner/loser into the next
+ * round's red/blue slot. This is a deliberate choice: the exact winners/losers
+ * bracket topology differs across 4/6/8-alliance formats and is guided by the
+ * admin (following the printed bracket) rather than a hard-coded graph, to
+ * avoid silently mis-routing a live elimination bracket. */
 function advanceBracket(db, bracketMatchId, winnerAlliance) {
   db.prepare('UPDATE bracket_matches SET winner_alliance=? WHERE id=?').run(winnerAlliance, bracketMatchId);
-  // Bracket advancement logic is complex and match-structure-dependent.
-  // For now, the admin manually sets participants for subsequent bracket matches
-  // via the admin UI — this function just records the winner.
-  // Full auto-advancement would require a hard-coded bracket graph for each alliance count.
 }
 
-module.exports = { getAllianceCount, initBracket, getBracket, advanceBracket };
+module.exports = {
+  getAllianceCount,
+  initBracket,
+  getBracket,
+  advanceBracket,
+  getAllianceRoster,
+};

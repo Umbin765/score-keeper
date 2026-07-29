@@ -145,7 +145,10 @@
       position: absolute; top: 51px;
       width: 210.7px; height: 100px;
       background: #fff; display: flex; overflow: hidden;
+      transition: background 0.3s ease;
     }
+    .sub-pill.rp-silver { background: #c0c0c0; }
+    .sub-pill.rp-gold   { background: #FFD700; }
     .sub-pill.red-side  { left: 234.5px; }
     .sub-pill.blue-side { left: 1474.8px; }
 
@@ -189,6 +192,8 @@
       font-size: 40px; font-weight: 700; color: #000;
       font-variant-numeric: tabular-nums; line-height: 46px;
     }
+    .team-num.carded-yellow { background: #ffd400; }
+    .team-num.carded-red    { background: #cc0000; color: #fff; }
 
     /* ── ALLIANCE LABEL + TOTAL ── */
     .alliance-block { position: absolute; top: 0; width: 225px; height: 180px; }
@@ -237,14 +242,7 @@
     }
 
     /* ── RP GOAL CELL STATES ── */
-    .goal.rp1 {
-      background: #aaaaaa !important;
-      color: #111 !important;
-      transition: background 0.3s;
-    }
     .goal.rp2 {
-      background: #FFD700 !important;
-      color: #111 !important;
       transition: background 0.3s;
     }
     /* ── MATCH RESULTS SCREEN ── */
@@ -305,11 +303,19 @@
       font-variant-numeric: tabular-nums;
     }
     .rs-team .rank .arr.up { color: #16c95c; } .rs-team .rank .arr.down { color: #e5233d; }
-    .rs-rp { display: flex; flex-direction: column; align-items: center; gap: 1vh; justify-content: flex-end; }
-    .rs-rp-title { color: #fff; font-weight: 700; font-size: clamp(16px, 2.4vh, 30px); text-transform: uppercase; letter-spacing: 0.08em; }
-    .rs-rp-icons { display: flex; gap: 0.6vw; flex-wrap: wrap; justify-content: center; }
-    .rs-rp-icons svg { width: clamp(22px, 3.6vh, 44px); height: clamp(22px, 3.6vh, 44px); fill: #fff; opacity: 0.18; }
-    .rs-rp-icons svg.lit { opacity: 1; filter: drop-shadow(0 0 6px rgba(255,255,255,0.35)); }
+    .rs-rp { display: flex; flex-direction: column; gap: 0.8vh; justify-content: flex-end; }
+    .rs-rp-title { color: #fff; font-weight: 700; font-size: clamp(16px, 2.4vh, 30px); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.2vh; }
+    .rs-rp-list { display: flex; flex-direction: column; gap: 0.4vh; }
+    .rs-rp-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 1.5vw;
+      background: #1b202a; border-radius: 5px; padding: 0.5vh 0.8vw;
+      font-size: clamp(16px, 2.6vh, 34px); font-weight: 700; color: #fff; opacity: 0.35;
+      transition: opacity 0.3s;
+    }
+    .rs-rp-row.lit { opacity: 1; }
+    .rs-rp-row .rp-name { text-transform: uppercase; letter-spacing: 0.06em; color: #8b93a8; font-size: 0.78em; }
+    .rs-rp-row.lit .rp-name { color: #c8d0e0; }
+    .rs-rp-row .rp-pts { font-variant-numeric: tabular-nums; white-space: nowrap; }
     .rs-qr { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 0.8vh; }
     .rs-qr .qr-box { background: #fff; padding: 8px; border-radius: 6px; line-height: 0; }
     .rs-qr .qr-box img { width: clamp(70px, 12vh, 140px); height: clamp(70px, 12vh, 140px); image-rendering: pixelated; }
@@ -382,9 +388,9 @@
     <div class="rs-teams blue" id="rs-teams-blue"></div>
     <div class="rs-rows" id="rs-rows"></div>
     <div class="rs-teams red" id="rs-teams-red"></div>
-    <div class="rs-rp"><div class="rs-rp-title">Ranking Points</div><div class="rs-rp-icons" id="rs-rp-blue"></div></div>
+    <div class="rs-rp"><div class="rs-rp-title">Ranking Points</div><div class="rs-rp-list" id="rs-rp-blue"></div></div>
     <div class="rs-qr"><div class="qr-box" id="rs-qr"></div><div class="qr-cap">Scan for live results</div></div>
-    <div class="rs-rp"><div class="rs-rp-title">Ranking Points</div><div class="rs-rp-icons" id="rs-rp-red"></div></div>
+    <div class="rs-rp"><div class="rs-rp-title">Ranking Points</div><div class="rs-rp-list" id="rs-rp-red"></div></div>
   </div>
 </div>
 
@@ -459,7 +465,7 @@
     </div>
 
     <!-- RED auto / teleop sub-scores -->
-    <div class="sub-pill red-side">
+    <div class="sub-pill red-side" id="red-sub-pill">
       <div class="sub-label red-accent">
         <div class="sub-icon">
           <svg class="arrow-svg" viewBox="0 0 448 512"><path fill="#fff" d="M438.6 278.6l-160 160C272.4 444.9 264.2 448 256 448s-16.38-3.125-22.62-9.375c-12.5-12.5-12.5-32.75 0-45.25L338.8 288H32C14.33 288 .0016 273.7 .0016 256S14.33 224 32 224h306.8l-105.4-105.4c-12.5-12.5-12.5-32.75 0-45.25s32.75-12.5 45.25 0l160 160C451.1 245.9 451.1 266.1 438.6 278.6z"/></svg>
@@ -501,7 +507,7 @@
     </div>
 
     <!-- BLUE auto / teleop sub-scores (mirrored: goal cell toward center) -->
-    <div class="sub-pill blue-side">
+    <div class="sub-pill blue-side" id="blue-sub-pill">
       <div class="sub-label blue-accent">
         <div class="sub-icon">
           <svg class="arrow-svg" viewBox="0 0 448 512"><path fill="#fff" d="M438.6 278.6l-160 160C272.4 444.9 264.2 448 256 448s-16.38-3.125-22.62-9.375c-12.5-12.5-12.5-32.75 0-45.25L338.8 288H32C14.33 288 .0016 273.7 .0016 256S14.33 224 32 224h306.8l-105.4-105.4c-12.5-12.5-12.5-32.75 0-45.25s32.75-12.5 45.25 0l160 160C451.1 245.9 451.1 266.1 438.6 278.6z"/></svg>
@@ -553,6 +559,8 @@
   var blueTeleop  = document.getElementById('blue-teleop');
   var redAuto     = document.getElementById('red-auto');
   var redTeleop   = document.getElementById('red-teleop');
+  var redSubPill  = document.getElementById('red-sub-pill');
+  var blueSubPill = document.getElementById('blue-sub-pill');
   var blueFoul    = document.getElementById('blue-foul');
   var redFoul     = document.getElementById('red-foul');
   var blueYcard   = document.getElementById('blue-ycard');
@@ -632,7 +640,7 @@
 
   var RS_CATS = [
     ['leave', 'Leave'], ['artifact', 'Artifact'], ['pattern', 'Pattern'],
-    ['balls', 'Balls'], ['base', 'Base'], ['foul', 'Foul']
+    ['base', 'Base'], ['foul', 'Foul']
   ];
 
   function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
@@ -648,17 +656,22 @@
   function rpIconRow(container, rp) {
     clearEl(container);
     var groups = [
-      ['rp-trophy',  4, rp ? rp.winLossRp || 0 : 0],
-      ['rp-base',    2, rp ? rp.parkRp    || 0 : 0],
-      ['rp-pattern', 2, rp ? rp.patternRp || 0 : 0],
-      ['rp-ball',    2, rp ? rp.ballRp    || 0 : 0]
+      ['Win / Loss', rp ? rp.winLossRp || 0 : 0],
+      ['Park',       rp ? rp.parkRp    || 0 : 0],
+      ['Pattern',    rp ? rp.patternRp || 0 : 0]
     ];
     groups.forEach(function (g) {
-      for (var i = 0; i < g[1]; i++) {
-        var icon = makeUseIcon(g[0]);
-        if (i < g[2]) icon.classList.add('lit');
-        container.appendChild(icon);
-      }
+      var row = document.createElement('div');
+      row.className = 'rs-rp-row' + (g[1] > 0 ? ' lit' : '');
+      var name = document.createElement('span');
+      name.className = 'rp-name';
+      name.textContent = g[0];
+      var pts = document.createElement('span');
+      pts.className = 'rp-pts';
+      pts.textContent = g[1] + ' pt' + (g[1] === 1 ? '' : 's');
+      row.appendChild(name);
+      row.appendChild(pts);
+      container.appendChild(row);
     });
   }
 
@@ -752,7 +765,6 @@
       leave:    p.auto_leave || 0,
       artifact: (p.auto_classified || 0) + (p.auto_overflow || 0) + (p.teleop_classified || 0) + (p.teleop_overflow || 0),
       pattern:  (p.auto_pattern || 0) + (p.teleop_pattern || 0),
-      balls:    p.teleop_balls || 0,
       base:     p.park || 0,
       foul:     p.penalties || 0
     };
@@ -834,25 +846,29 @@
     setCard(ycEl, yc, 'yc');
     setCard(rcEl, rc, 'rc');
     foulEl.textContent = scoreObj && scoreObj.breakdown
-      ? Math.round((scoreObj.breakdown.penalty_pts || 0) / 5) : '0';
+      ? ((scoreObj.breakdown.auto_pattern || 0) + (scoreObj.breakdown.teleop_pattern || 0)) : '0';
   }
 
   // ── Sub-scores ─────────────────────────────────────────────────────────────
-  function setSubScores(autoEl, teleopEl, scoreObj) {
-    autoEl.textContent   = scoreObj && scoreObj.autoTotal   != null ? scoreObj.autoTotal   : '0';
-    teleopEl.textContent = scoreObj && scoreObj.teleopTotal != null ? scoreObj.teleopTotal : '0';
-  }
+  function setSubScores(overflowEl, classifiedEl, pillEl, goalEl, scoreObj) {
+    var overflow   = scoreObj ? ((scoreObj.auto_overflow   || 0) + (scoreObj.teleop_overflow   || 0)) : 0;
+    var classified = scoreObj ? ((scoreObj.auto_classified || 0) + (scoreObj.teleop_classified || 0)) : 0;
+    overflowEl.textContent   = overflow;
+    classifiedEl.textContent = classified; // CORRECT: raw count — do NOT divide by 3
 
-  // ── RP goal cell update ─────────────────────────────────────────────────────
-  function updateGoalCell(goalEl, rpData) {
+    var combined = overflow + classified;
+    pillEl.classList.remove('rp-silver', 'rp-gold');
     goalEl.classList.remove('rp1', 'rp2');
-    var level = rpData ? (rpData.ballRp || 0) : 0;
-    if (level >= 2) {
-      goalEl.textContent = ballRpT2 != null ? '/' + ballRpT2 : '';
+
+    if (ballRpT2 != null && combined >= ballRpT2) {
+      pillEl.classList.add('rp-gold');
       goalEl.classList.add('rp2');
-    } else if (level >= 1) {
       goalEl.textContent = ballRpT2 != null ? '/' + ballRpT2 : '';
+    } else if (ballRpT1 != null && combined >= ballRpT1) {
+      pillEl.classList.add('rp-silver');
       goalEl.classList.add('rp1');
+      // First threshold passed — show second threshold as the next target
+      goalEl.textContent = ballRpT2 != null ? '/' + ballRpT2 : '';
     } else {
       goalEl.textContent = ballRpT1 != null ? '/' + ballRpT1 : '';
     }
@@ -863,12 +879,10 @@
     if (!data) return;
     blueScore.textContent = data.blue && data.blue.total != null ? data.blue.total : '0';
     redScore.textContent  = data.red  && data.red.total  != null ? data.red.total  : '0';
-    setSubScores(blueAuto, blueTeleop, data.blue);
-    setSubScores(redAuto,  redTeleop,  data.red);
+    setSubScores(blueAuto, blueTeleop, blueSubPill, blueGoal, data.blue);
+    setSubScores(redAuto,  redTeleop,  redSubPill,  redGoal,  data.red);
     renderCards(blueYcard, blueRcard, blueFoul, data.blue);
     renderCards(redYcard,  redRcard,  redFoul,  data.red);
-    updateGoalCell(redGoal,  data.redRP);
-    updateGoalCell(blueGoal, data.blueRP);
   }
 
   // ── State transitions ──────────────────────────────────────────────────────
@@ -888,13 +902,17 @@
     blueScore.textContent = '0'; redScore.textContent   = '0';
     blueAuto.textContent  = '0'; blueTeleop.textContent = '0';
     redAuto.textContent   = '0'; redTeleop.textContent  = '0';
+    redSubPill.classList.remove('rp-silver', 'rp-gold');
+    blueSubPill.classList.remove('rp-silver', 'rp-gold');
+    redGoal.classList.remove('rp1', 'rp2');
+    blueGoal.classList.remove('rp1', 'rp2');
+    redGoal.textContent  = ballRpT1 != null ? '/' + ballRpT1 : '';
+    blueGoal.textContent = ballRpT1 != null ? '/' + ballRpT1 : '';
     setCard(blueYcard, 0); setCard(blueRcard, 0);
     setCard(redYcard,  0); setCard(redRcard,  0);
     blueFoul.textContent  = '0'; redFoul.textContent  = '0';
     matchInfoEl.textContent = '—';
     renderDisplayMotif(null);
-    updateGoalCell(redGoal, null);
-    updateGoalCell(blueGoal, null);
   }
 
   function goActive(state) {
@@ -1006,6 +1024,31 @@
     }).catch(function () {});
   }
 
+  // ── Card highlights on team number boxes ────────────────────────────────────
+  function refreshCardHighlights(list) {
+    [redT1, redT2, blueT1, blueT2].forEach(function (el) {
+      el.classList.remove('carded-yellow', 'carded-red');
+    });
+    (list || []).forEach(function (p) {
+      if (p.type !== 'yellow' && p.type !== 'red') return;
+      var teamNum = p.team_number || p.teamNumber;
+      if (teamNum == null) return;
+      var els = p.alliance === 'red' ? [redT1, redT2] : [blueT1, blueT2];
+      els.forEach(function (el) {
+        if (parseInt(el.textContent, 10) === teamNum) {
+          el.classList.add(p.type === 'yellow' ? 'carded-yellow' : 'carded-red');
+        }
+      });
+    });
+  }
+
+  function fetchCardHighlights(matchId) {
+    fetch('/api/matches/' + matchId + '/penalties')
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (list) { refreshCardHighlights(list); })
+      .catch(function () {});
+  }
+
   // ── Socket ─────────────────────────────────────────────────────────────────
   var socket = SK.connectSocket();
   if (socket) {
@@ -1013,6 +1056,8 @@
     socket.on('period_change', function (state) { SK.applyTimerState(state, timerEl, periodEl); SK.playBuzzer(); });
     socket.on('match_start',   function (state) { goActive(state); });
     socket.on('match_end',     function ()      { goReview(); });
+    socket.on('penalty_added',   function (data) { refreshCardHighlights(data && data.all); });
+    socket.on('penalty_removed', function (data) { refreshCardHighlights(data && data.all); });
     socket.on('score_update',  function (data)  {
       if (currentResults) { updateResultsFromScoreUpdate(data); return; }
       if (reviewing) return;
@@ -1033,13 +1078,15 @@
     socket.on('match_loaded',  function (data)  {
       hideResultsScreen();
       hideWinnerAnim();
+      postBanner.classList.remove('visible');
       fetchQueue(); fetchMatchCount();
+      refreshCardHighlights([]);
       matchActive = false;
       SK.applyTimerState(data, timerEl, periodEl);
       periodEl.textContent = 'Ready';
       periodEl.className   = 'period-label';
     });
-    socket.on('match_abort',   function ()      { goWaiting(); fetchQueue(); });
+    socket.on('match_abort',   function ()      { goWaiting(); fetchQueue(); refreshCardHighlights([]); });
     socket.on('rankings_update', function (rankings) { updateResultsRanks(rankings); });
     socket.on('queue_update',  function ()      { fetchQueue(); fetchMatchCount(); });
     socket.on('motif_update',  function (data)  {
@@ -1052,6 +1099,7 @@
   function fetchTimerState() {
     fetch('/api/timer').then(function (r) { return r.ok ? r.json() : null; }).then(function (state) {
       if (!state || !state.matchId) { goWaiting(); return; }
+      fetchCardHighlights(state.matchId);
       if (state.matchEnded && !state.scoresRevealed) {
         fetch('/api/matches/' + state.matchId + '/scores')
           .then(function (r) { return r.ok ? r.json() : null; })
@@ -1067,6 +1115,7 @@
         return;
       }
       matchActive = !!(state.running && !state.paused);
+      postBanner.classList.remove('visible');
       SK.applyTimerState(state, timerEl, periodEl);
       if (!state.running) {
         periodEl.textContent = 'Ready';

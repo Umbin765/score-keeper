@@ -1,6 +1,6 @@
 'use strict';
 
-const { getPointValues, getSettingsMap, getFullScore } = require('./db');
+const { getPointValues, getSettingsMap, getFullScore, isAllianceRedCarded } = require('./db');
 
 /**
  * Calculate the total score for one alliance in one match.
@@ -10,7 +10,7 @@ function calculateScore(db, matchId, alliance) {
   return getFullScore(db, matchId, alliance).total;
 }
 
-/** Park score for RP threshold checking. */
+/** Park (BASE) score for Movement RP threshold checking. */
 function calculateParkScore(db, matchId, alliance) {
   const pv = getPointValues(db);
   const cycles = db.prepare('SELECT * FROM endgame_cycles WHERE match_id=? AND alliance=?').all(matchId, alliance);
@@ -25,59 +25,113 @@ function calculateParkScore(db, matchId, alliance) {
   return parkScore;
 }
 
-/** Total pattern balls (auto + teleop) for RP threshold checking. */
-function calculateArtifactsSorted(db, matchId, alliance) {
-  const row = db.prepare('SELECT auto_pattern, teleop_pattern FROM match_scores WHERE match_id=? AND alliance=?').get(matchId, alliance);
+/** AUTO LEAVE points for Movement RP threshold checking (SEC: LEAVE + BASE combined). */
+function calculateLeaveScore(db, matchId, alliance) {
+  const pv = getPointValues(db);
+  const row = db.prepare('SELECT auto_leave_r1, auto_leave_r2 FROM match_scores WHERE match_id=? AND alliance=?').get(matchId, alliance);
   if (!row) return 0;
-  return ((row.auto_pattern || 0) + (row.teleop_pattern || 0)) / 2;
+  return ((row.auto_leave_r1 || 0) + (row.auto_leave_r2 || 0)) * pv.auto_leave;
 }
 
-/** Total balls scored for RP threshold checking. */
-function calculateBallsScored(db, matchId, alliance) {
-  const row = db.prepare('SELECT auto_classified, auto_overflow, teleop_classified, teleop_overflow FROM match_scores WHERE match_id=? AND alliance=?').get(matchId, alliance);
+/** PATTERN points (auto + teleop matched artifacts, at pts_auto_pattern each) for Pattern RP threshold checking. */
+function calculatePatternPoints(db, matchId, alliance) {
+  const pv = getPointValues(db);
+  const row = db.prepare('SELECT auto_pattern, teleop_pattern FROM match_scores WHERE match_id=? AND alliance=?').get(matchId, alliance);
   if (!row) return 0;
-  return (row.auto_classified || 0) / 3 + (row.auto_overflow || 0) + (row.teleop_classified || 0) / 3 + (row.teleop_overflow || 0);
+  return ((row.auto_pattern || 0) + (row.teleop_pattern || 0)) * pv.auto_pattern;
+}
+
+/** Number of ARTIFACTS scored through the goal (classified + overflow, auto + teleop) for Goal RP threshold checking. */
+function calculateGoalArtifacts(db, matchId, alliance) {
+  const row = db.prepare(`
+    SELECT auto_classified, auto_overflow, teleop_classified, teleop_overflow
+    FROM match_scores WHERE match_id=? AND alliance=?
+  `).get(matchId, alliance);
+  if (!row) return 0;
+  return (row.auto_classified || 0) + (row.auto_overflow || 0) + (row.teleop_classified || 0) + (row.teleop_overflow || 0);
+}
+
+/** Active RP overrides for one alliance in one match, keyed by category. */
+function getRpOverrides(db, matchId, alliance) {
+  const rows = db.prepare('SELECT * FROM rp_overrides WHERE match_id=? AND alliance=?').all(matchId, alliance);
+  const map = {};
+  for (const row of rows) map[row.category] = row;
+  return map;
+}
+
+/** Grant = max for the category; exclude = 0; override = the referee's exact value. */
+function applyRpOverride(override, computedValue, maxValue) {
+  if (!override) return computedValue;
+  if (override.mode === 'grant') return maxValue;
+  if (override.mode === 'exclude') return 0;
+  if (override.mode === 'override') return override.value;
+  return computedValue;
 }
 
 /**
- * Calculate RP earned by one alliance in one match.
- * Returns 0 if the alliance has a red card (DQ).
+ * Compute the RP breakdown for one alliance in one match, applying any
+ * Head Referee RP overrides (grant/exclude/override) on top of the
+ * auto-calculated per-category values. A red card (DQ) zeroes every
+ * category before overrides are applied, so an "override" can still
+ * restore RP for a DQ'd alliance if the Head Referee sets one.
  */
-function calculateRP(db, matchId, alliance) {
+function computeRpBreakdown(db, matchId, alliance) {
   const settings = getSettingsMap(db);
   const opp = alliance === 'red' ? 'blue' : 'red';
 
-  // Check DQ
-  const scoreRow = db.prepare('SELECT red_cards FROM match_scores WHERE match_id=? AND alliance=?').get(matchId, alliance);
-  const redCards = JSON.parse(scoreRow?.red_cards || '[]');
-  if (redCards.length > 0) return 0;
+  const isDQ = isAllianceRedCarded(db, matchId, alliance);
 
-  const myScore = calculateScore(db, matchId, alliance);
-  const oppScore = calculateScore(db, matchId, opp);
+  let winLossRp = 0, parkRp = 0, patternRp = 0, ballRp = 0;
 
-  let rp = 0;
+  if (!isDQ) {
+    // Per the SEC Game Manual: any confirmed red card ends the match
+    // immediately and the opposing alliance is awarded every RP category
+    // (see timer.forceEnd() call in server.js's 'penalty' handler).
+    if (isAllianceRedCarded(db, matchId, opp)) {
+      winLossRp = parseFloat(settings.rp_win);
+      parkRp = 2;
+      patternRp = 2;
+      ballRp = 2;
+    } else {
+      const myScore = calculateScore(db, matchId, alliance);
+      const oppScore = calculateScore(db, matchId, opp);
 
-  // Win / Tie / Loss
-  if (myScore > oppScore) rp += parseFloat(settings.rp_win);
-  else if (myScore === oppScore) rp += parseFloat(settings.rp_tie);
-  else rp += parseFloat(settings.rp_loss);
+      if (myScore > oppScore) winLossRp = parseFloat(settings.rp_win);
+      else if (myScore === oppScore) winLossRp = parseFloat(settings.rp_tie);
+      else winLossRp = parseFloat(settings.rp_loss);
 
-  // PARK RP
-  const parkScore = calculateParkScore(db, matchId, alliance);
-  if (parkScore >= parseFloat(settings.rp_park_threshold_2)) rp += 2;
-  else if (parkScore >= parseFloat(settings.rp_park_threshold_1)) rp += 1;
+      // Movement RP: combined LEAVE + BASE points.
+      const movementScore = calculateLeaveScore(db, matchId, alliance) + calculateParkScore(db, matchId, alliance);
+      if (movementScore >= parseFloat(settings.rp_park_threshold_2)) parkRp = 2;
+      else if (movementScore >= parseFloat(settings.rp_park_threshold_1)) parkRp = 1;
 
-  // PATTERN RP (artifacts sorted)
-  const artifacts = calculateArtifactsSorted(db, matchId, alliance);
-  if (artifacts >= parseFloat(settings.rp_pattern_threshold_2)) rp += 2;
-  else if (artifacts >= parseFloat(settings.rp_pattern_threshold_1)) rp += 1;
+      // Pattern RP: PATTERN points (matched-artifact count × pts_auto_pattern).
+      const patternPts = calculatePatternPoints(db, matchId, alliance);
+      if (patternPts >= parseFloat(settings.rp_pattern_threshold_2)) patternRp = 2;
+      else if (patternPts >= parseFloat(settings.rp_pattern_threshold_1)) patternRp = 1;
 
-  // BALL RP
-  const balls = calculateBallsScored(db, matchId, alliance);
-  if (balls >= parseFloat(settings.rp_ball_threshold_2)) rp += 2;
-  else if (balls >= parseFloat(settings.rp_ball_threshold_1)) rp += 1;
+      // Goal RP: number of ARTIFACTS scored through the goal (classified + overflow).
+      const goalArtifacts = calculateGoalArtifacts(db, matchId, alliance);
+      if (goalArtifacts >= parseFloat(settings.rp_ball_threshold_2)) ballRp = 2;
+      else if (goalArtifacts >= parseFloat(settings.rp_ball_threshold_1)) ballRp = 1;
+    }
+  }
 
-  return rp;
+  const overrides = getRpOverrides(db, matchId, alliance);
+  winLossRp = applyRpOverride(overrides.win,     winLossRp, parseFloat(settings.rp_win));
+  parkRp    = applyRpOverride(overrides.park,    parkRp,    2);
+  patternRp = applyRpOverride(overrides.pattern, patternRp, 2);
+  ballRp    = applyRpOverride(overrides.ball,    ballRp,    2);
+
+  return { winLossRp, parkRp, patternRp, ballRp, total: winLossRp + parkRp + patternRp + ballRp, overrides };
+}
+
+/**
+ * Calculate RP earned by one alliance in one match, including any
+ * Head Referee overrides.
+ */
+function calculateRP(db, matchId, alliance) {
+  return computeRpBreakdown(db, matchId, alliance).total;
 }
 
 /**
@@ -85,32 +139,7 @@ function calculateRP(db, matchId, alliance) {
  * Used to show live RP on /display.
  */
 function computeLiveRP(db, matchId, alliance) {
-  const settings = getSettingsMap(db);
-  const opp = alliance === 'red' ? 'blue' : 'red';
-  const myScore = calculateScore(db, matchId, alliance);
-  const oppScore = calculateScore(db, matchId, opp);
-
-  let winLossRp = 0;
-  if (myScore > oppScore) winLossRp = parseFloat(settings.rp_win);
-  else if (myScore === oppScore) winLossRp = parseFloat(settings.rp_tie);
-  else winLossRp = parseFloat(settings.rp_loss);
-
-  const parkScore = calculateParkScore(db, matchId, alliance);
-  let parkRp = 0;
-  if (parkScore >= parseFloat(settings.rp_park_threshold_2)) parkRp = 2;
-  else if (parkScore >= parseFloat(settings.rp_park_threshold_1)) parkRp = 1;
-
-  const artifacts = calculateArtifactsSorted(db, matchId, alliance);
-  let patternRp = 0;
-  if (artifacts >= parseFloat(settings.rp_pattern_threshold_2)) patternRp = 2;
-  else if (artifacts >= parseFloat(settings.rp_pattern_threshold_1)) patternRp = 1;
-
-  const balls = calculateBallsScored(db, matchId, alliance);
-  let ballRp = 0;
-  if (balls >= parseFloat(settings.rp_ball_threshold_2)) ballRp = 2;
-  else if (balls >= parseFloat(settings.rp_ball_threshold_1)) ballRp = 1;
-
-  return { winLossRp, parkRp, patternRp, ballRp, total: winLossRp + parkRp + patternRp + ballRp };
+  return computeRpBreakdown(db, matchId, alliance);
 }
 
 /**
@@ -304,10 +333,13 @@ function updateRankings(db, includeMatchId = null) {
 module.exports = {
   calculateScore,
   calculateParkScore,
-  calculateArtifactsSorted,
-  calculateBallsScored,
+  calculateLeaveScore,
+  calculatePatternPoints,
+  calculateGoalArtifacts,
   calculateRP,
   computeLiveRP,
+  computeRpBreakdown,
+  getRpOverrides,
   calculateOPR,
   updateRankings,
 };

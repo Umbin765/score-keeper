@@ -57,6 +57,28 @@
     .danger-section { border-color: var(--red-border); background: var(--red-bg); }
     .section-sub { font-size: 0.95rem; font-weight: 700; color: var(--text2); margin: 0.75rem 0 0.4rem; text-transform: uppercase; letter-spacing: 0.06em; }
     input[type="file"] { color: var(--text2); }
+    .match-edit-row td { padding: 0; }
+    .match-edit-panel { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; margin: 0.25rem 0 0.5rem; padding: 0.9rem; }
+    .match-edit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem 2rem; }
+    .match-edit-col h4 { font-size: 0.8rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.5rem; }
+    .match-edit-col h4.red-text  { color: var(--red-light); }
+    .match-edit-col h4.blue-text { color: var(--blue-light); }
+    .match-edit-field { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.3rem; font-size: 0.85rem; }
+    .match-edit-field label { color: var(--text2); flex: 1; }
+    .match-edit-field input[type=number] { width: 70px; text-align: right; }
+    .match-edit-cards { margin-top: 0.5rem; }
+    .match-edit-cards-title { font-size: 0.72rem; color: var(--text2); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.25rem; font-weight: 700; }
+    .match-edit-actions { display: flex; gap: 0.5rem; margin-top: 0.85rem; }
+    .match-edit-penalties { margin-top: 0.85rem; border-top: 1px solid var(--border); padding-top: 0.75rem; }
+    .match-edit-penalties h4 { font-size: 0.8rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.5rem; color: var(--text2); }
+    .penalty-list { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.6rem; min-height: 1rem; }
+    .penalty-item { display: flex; align-items: center; justify-content: space-between; background: var(--bg3); border-radius: 5px; padding: 0.3rem 0.6rem; font-size: 0.82rem; gap: 0.5rem; }
+    .penalty-item .pi-alliance { font-weight: 700; text-transform: uppercase; }
+    .penalty-item .pi-alliance.red  { color: var(--red-light); }
+    .penalty-item .pi-alliance.blue { color: var(--blue-light); }
+    .penalty-item .pi-type { color: var(--text2); flex: 1; }
+    .penalty-item .pi-del { padding: 0.1rem 0.4rem; font-size: 0.75rem; color: var(--red-light); border-color: var(--red-border); background: var(--red-bg); }
+    .penalty-add-row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
   </style>
 </head>
 <body>
@@ -71,6 +93,7 @@
   <script src="/socket.io/socket.io.js"></script>
   <script src="/js/common.js"></script>
   <script src="/js/xlsx.full.min.js"></script>
+  <script src="/js/qrcode.js"></script>
   <script>
   (function () {
     'use strict';
@@ -89,8 +112,11 @@
       { id: 'rp',       label: 'Ranking Points' },
       { id: 'periods',  label: 'Periods' },
       { id: 'schedule', label: 'Schedule' },
+      { id: 'matches',  label: 'Matches' },
       { id: 'pins',     label: 'PINs' },
       { id: 'playoffs', label: 'Playoffs' },
+      { id: 'notes',    label: 'Notes' },
+      { id: 'access',   label: 'Access' },
       { id: 'reset',    label: 'Reset' },
     ];
 
@@ -119,8 +145,11 @@
       buildRpTab();
       buildPeriodsTab();
       buildScheduleTab();
+      buildMatchesTab();
       buildPinsTab();
       buildPlayoffsTab();
+      buildNotesTab();
+      buildAccessTab();
       buildResetTab();
     }
 
@@ -171,7 +200,7 @@
     function fetchMatches() {
       fetch('/api/matches')
         .then(function (r) { return r.json(); })
-        .then(function (m) { gMatches = m || []; renderScheduleTable(); })
+        .then(function (m) { gMatches = m || []; renderScheduleTable(); renderMatchesAdminTable(); renderNotesMatchSelect(); renderNotesList(); })
         .catch(function () {});
     }
 
@@ -366,7 +395,6 @@
       ['pts_auto_pattern',      'Auto: Pattern Match'],
       ['pts_teleop_classified', 'Teleop: Artifacts Classified'],
       ['pts_teleop_overflow',   'Teleop: Overflow Artifacts'],
-      ['pts_teleop_balls',      'Teleop: Balls Scored'],
       ['pts_park_partial',      'Park: Partial'],
       ['pts_park_full',         'Park: Full'],
       ['pts_park_bonus',        'Park: Bonus'],
@@ -723,6 +751,357 @@
     }
 
     // ════════════════════════════════════════════════════════════════════════════
+    // MATCHES TAB
+    // ════════════════════════════════════════════════════════════════════════════
+    var matchesAdminTableBody;
+
+    var MATCH_EDIT_FIELDS = [
+      ['auto_classified',   'Auto Classified'],
+      ['auto_overflow',     'Auto Overflow'],
+      ['auto_leave_r1',     'R1 Left Zone'],
+      ['auto_leave_r2',     'R2 Left Zone'],
+      ['auto_pattern',      'Auto Pattern'],
+      ['teleop_classified', 'Teleop Classified'],
+      ['teleop_overflow',   'Teleop Overflow'],
+      ['teleop_pattern',    'Teleop Pattern'],
+    ];
+
+    function buildMatchesTab() {
+      var p = panels.matches;
+      var section = makeAdminSection('All Matches');
+
+      var refreshBtn = document.createElement('button');
+      refreshBtn.textContent = 'Refresh';
+      refreshBtn.style.marginBottom = '0.5rem';
+      refreshBtn.addEventListener('click', fetchMatches);
+      section.appendChild(refreshBtn);
+
+      var tableWrap = document.createElement('div');
+      tableWrap.style.overflowX = 'auto';
+      var table = document.createElement('table');
+      table.className = 'data-table';
+      var thead = document.createElement('thead');
+      var htr = document.createElement('tr');
+      ['Phase', 'Match #', 'Red 1', 'Red 2', 'Blue 1', 'Blue 2', 'State', ''].forEach(function (h) {
+        var th = document.createElement('th');
+        th.textContent = h;
+        htr.appendChild(th);
+      });
+      thead.appendChild(htr);
+      table.appendChild(thead);
+      matchesAdminTableBody = document.createElement('tbody');
+      table.appendChild(matchesAdminTableBody);
+      tableWrap.appendChild(table);
+      section.appendChild(tableWrap);
+      p.appendChild(section);
+    }
+
+    function renderMatchesAdminTable() {
+      if (!matchesAdminTableBody) return;
+      while (matchesAdminTableBody.firstChild) matchesAdminTableBody.removeChild(matchesAdminTableBody.firstChild);
+
+      if (!gMatches.length) {
+        var emptyRow = document.createElement('tr');
+        var emptyTd = document.createElement('td');
+        emptyTd.colSpan = 8;
+        emptyTd.textContent = 'No matches yet.';
+        emptyTd.style.textAlign = 'center';
+        emptyTd.style.color = 'var(--text2)';
+        emptyRow.appendChild(emptyTd);
+        matchesAdminTableBody.appendChild(emptyRow);
+        return;
+      }
+
+      gMatches.forEach(function (m) {
+        var row = document.createElement('tr');
+
+        function td(text, color) {
+          var el = document.createElement('td');
+          el.textContent = text != null ? text : '—';
+          if (color) el.style.color = color;
+          return el;
+        }
+
+        row.appendChild(td(m.phase === 'playoffs' ? 'Playoff' : 'Qual'));
+        row.appendChild(td(m.match_number));
+        row.appendChild(td(m.red1_team  && m.red1_team.number,  'var(--red-light)'));
+        row.appendChild(td(m.red2_team  && m.red2_team.number,  'var(--red-light)'));
+        row.appendChild(td(m.blue1_team && m.blue1_team.number, 'var(--blue-light)'));
+        row.appendChild(td(m.blue2_team && m.blue2_team.number, 'var(--blue-light)'));
+        row.appendChild(td(m.state, 'var(--text2)'));
+
+        var actionTd = document.createElement('td');
+        var editBtn = document.createElement('button');
+        editBtn.textContent = 'Edit';
+        editBtn.style.fontSize = '0.8rem';
+        editBtn.style.padding = '0.2rem 0.5rem';
+        editBtn.addEventListener('click', function () { openMatchAdminEditor(m, row); });
+        actionTd.appendChild(editBtn);
+        row.appendChild(actionTd);
+
+        matchesAdminTableBody.appendChild(row);
+      });
+    }
+
+    function openMatchAdminEditor(m, row) {
+      // Close any open editor first
+      var existing = matchesAdminTableBody.querySelector('.match-edit-row');
+      if (existing) {
+        var wasThisRow = existing.previousSibling === row;
+        existing.remove();
+        if (wasThisRow) return; // toggle off
+      }
+
+      fetch('/api/matches/' + m.id + '/scores')
+        .then(function (r) { return r.json(); })
+        .then(function (scores) {
+          var editorRow = document.createElement('tr');
+          editorRow.className = 'match-edit-row';
+          var editorTd = document.createElement('td');
+          editorTd.colSpan = 8;
+
+          var panel = document.createElement('div');
+          panel.className = 'match-edit-panel';
+
+          var titleEl = document.createElement('div');
+          titleEl.style.cssText = 'font-weight:700;margin-bottom:0.65rem;';
+          titleEl.textContent = (m.phase === 'playoffs' ? 'Playoff' : 'Qualification') + ' Match ' + m.match_number + ' — Score Editor';
+          panel.appendChild(titleEl);
+
+          var grid = document.createElement('div');
+          grid.className = 'match-edit-grid';
+
+          var teamsByAlliance = {
+            red:  [m.red1_team, m.red2_team].filter(Boolean),
+            blue: [m.blue1_team, m.blue2_team].filter(Boolean),
+          };
+
+          ['red', 'blue'].forEach(function (a) {
+            var col = document.createElement('div');
+            col.className = 'match-edit-col';
+
+            var heading = document.createElement('h4');
+            heading.className = a + '-text';
+            heading.textContent = a.toUpperCase() + ' Alliance';
+            col.appendChild(heading);
+
+            MATCH_EDIT_FIELDS.forEach(function (f) {
+              var fieldRow = document.createElement('div');
+              fieldRow.className = 'match-edit-field';
+              var lbl = document.createElement('label');
+              lbl.textContent = f[1];
+              var inp = makeInput('number', '', '0');
+              inp.min = '0';
+              inp.value = scores[a] && scores[a].raw ? (scores[a].raw[f[0]] != null ? scores[a].raw[f[0]] : 0) : 0;
+              inp.setAttribute('data-alliance', a);
+              inp.setAttribute('data-field', f[0]);
+              fieldRow.appendChild(lbl);
+              fieldRow.appendChild(inp);
+              col.appendChild(fieldRow);
+            });
+
+            ['yellow_cards', 'red_cards'].forEach(function (cf) {
+              var cardsWrap = document.createElement('div');
+              cardsWrap.className = 'match-edit-cards';
+              var cardsTitle = document.createElement('div');
+              cardsTitle.className = 'match-edit-cards-title';
+              cardsTitle.textContent = cf === 'yellow_cards' ? 'Yellow Cards' : 'Red Cards';
+              cardsWrap.appendChild(cardsTitle);
+              var current = (scores[a] && scores[a][cf]) || [];
+              teamsByAlliance[a].forEach(function (t) {
+                var lbl = document.createElement('label');
+                lbl.style.cssText = 'display:flex;align-items:center;gap:0.4rem;font-size:0.85rem;margin-bottom:0.2rem;cursor:pointer;';
+                var cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.checked = current.indexOf(t.number) !== -1;
+                cb.setAttribute('data-alliance', a);
+                cb.setAttribute('data-card', cf);
+                cb.setAttribute('data-team', t.number);
+                lbl.appendChild(cb);
+                lbl.appendChild(document.createTextNode(' Team ' + t.number));
+                cardsWrap.appendChild(lbl);
+              });
+              if (!teamsByAlliance[a].length) {
+                var none = document.createElement('div');
+                none.style.cssText = 'font-size:0.8rem;color:var(--text2);';
+                none.textContent = 'No teams assigned';
+                cardsWrap.appendChild(none);
+              }
+              col.appendChild(cardsWrap);
+            });
+
+            grid.appendChild(col);
+          });
+
+          panel.appendChild(grid);
+
+          // ── Penalties ──────────────────────────────────────────────────────
+          var penSection = document.createElement('div');
+          penSection.className = 'match-edit-penalties';
+          var penHeading = document.createElement('h4');
+          penHeading.textContent = 'Penalties';
+          penSection.appendChild(penHeading);
+
+          var penList = document.createElement('div');
+          penList.className = 'penalty-list';
+          penSection.appendChild(penList);
+
+          function renderPenalties(penalties) {
+            while (penList.firstChild) penList.removeChild(penList.firstChild);
+            if (!penalties || !penalties.length) {
+              var none = document.createElement('div');
+              none.style.cssText = 'font-size:0.8rem;color:var(--text2);';
+              none.textContent = 'No penalties';
+              penList.appendChild(none);
+              return;
+            }
+            penalties.forEach(function (p) {
+              var item = document.createElement('div');
+              item.className = 'penalty-item';
+              var alliance = document.createElement('span');
+              alliance.className = 'pi-alliance ' + p.alliance;
+              alliance.textContent = p.alliance;
+              var type = document.createElement('span');
+              type.className = 'pi-type';
+              type.textContent = p.type + (p.team_number ? ' — Team ' + p.team_number : '');
+              var delBtn = document.createElement('button');
+              delBtn.className = 'pi-del';
+              delBtn.textContent = 'Remove';
+              delBtn.addEventListener('click', function () {
+                fetch('/api/matches/' + m.id + '/penalties/' + p.id, { method: 'DELETE' })
+                  .then(function (r) { return r.json(); })
+                  .then(function (d) { renderPenalties(d.penalties); })
+                  .catch(function () { showToast('Failed to remove penalty', 'error'); });
+              });
+              item.appendChild(alliance);
+              item.appendChild(type);
+              item.appendChild(delBtn);
+              penList.appendChild(item);
+            });
+          }
+
+          // Add penalty form
+          var addRow = document.createElement('div');
+          addRow.className = 'penalty-add-row';
+
+          var allianceSel = document.createElement('select');
+          ['red', 'blue'].forEach(function (a) {
+            var opt = document.createElement('option');
+            opt.value = a; opt.textContent = a.toUpperCase();
+            allianceSel.appendChild(opt);
+          });
+
+          var typeSel = document.createElement('select');
+          ['minor', 'major'].forEach(function (t) {
+            var opt = document.createElement('option');
+            opt.value = t; opt.textContent = t.charAt(0).toUpperCase() + t.slice(1);
+            typeSel.appendChild(opt);
+          });
+
+          var teamInp = makeInput('number', 'Team # (opt)', '');
+          teamInp.style.width = '110px';
+
+          var addPenBtn = document.createElement('button');
+          addPenBtn.textContent = '+ Add Penalty';
+          addPenBtn.addEventListener('click', function () {
+            fetch('/api/matches/' + m.id + '/penalties', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ alliance: allianceSel.value, type: typeSel.value, team_number: teamInp.value ? parseInt(teamInp.value, 10) : null }),
+            })
+              .then(function (r) { return r.json(); })
+              .then(function (d) { teamInp.value = ''; renderPenalties(d.penalties); })
+              .catch(function () { showToast('Failed to add penalty', 'error'); });
+          });
+
+          addRow.appendChild(allianceSel);
+          addRow.appendChild(typeSel);
+          addRow.appendChild(teamInp);
+          addRow.appendChild(addPenBtn);
+          penSection.appendChild(addRow);
+          panel.appendChild(penSection);
+
+          // Load existing penalties
+          fetch('/api/matches/' + m.id + '/penalties')
+            .then(function (r) { return r.json(); })
+            .then(renderPenalties)
+            .catch(function () {});
+
+          var actions = document.createElement('div');
+          actions.className = 'match-edit-actions';
+
+          var saveBtn = document.createElement('button');
+          saveBtn.className = 'success-btn';
+          saveBtn.textContent = 'Save Changes';
+          saveBtn.addEventListener('click', function () {
+            saveMatchAdminEdits(m.id, panel, scores, m, editorRow);
+          });
+
+          var cancelBtn = document.createElement('button');
+          cancelBtn.textContent = 'Cancel';
+          cancelBtn.addEventListener('click', function () { editorRow.remove(); });
+
+          actions.appendChild(saveBtn);
+          actions.appendChild(cancelBtn);
+          panel.appendChild(actions);
+
+          editorTd.appendChild(panel);
+          editorRow.appendChild(editorTd);
+          row.parentNode.insertBefore(editorRow, row.nextSibling);
+        })
+        .catch(function () { showToast('Failed to load match scores', 'error'); });
+    }
+
+    function saveMatchAdminEdits(matchId, panel, original, m, editorRow) {
+      var requests = [];
+
+      panel.querySelectorAll('input[type=number][data-field]').forEach(function (inp) {
+        var a = inp.getAttribute('data-alliance');
+        var f = inp.getAttribute('data-field');
+        var oldVal = original[a] && original[a].raw ? (original[a].raw[f] != null ? Number(original[a].raw[f]) : 0) : 0;
+        var newVal = Number(inp.value) || 0;
+        if (newVal !== oldVal) {
+          requests.push(fetch('/api/matches/' + matchId + '/override', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ alliance: a, field: f, value: newVal, changedBy: 'admin' }),
+          }));
+        }
+      });
+
+      ['red', 'blue'].forEach(function (a) {
+        ['yellow_cards', 'red_cards'].forEach(function (cf) {
+          var newCards = [];
+          panel.querySelectorAll('input[type=checkbox][data-alliance="' + a + '"][data-card="' + cf + '"]').forEach(function (cb) {
+            if (cb.checked) newCards.push(parseInt(cb.getAttribute('data-team'), 10));
+          });
+          var oldCards = (original[a] && original[a][cf]) || [];
+          var changed = newCards.length !== oldCards.length || newCards.some(function (n) { return oldCards.indexOf(n) === -1; });
+          if (changed) {
+            requests.push(fetch('/api/matches/' + matchId + '/override', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ alliance: a, field: cf, value: newCards, changedBy: 'admin' }),
+            }));
+          }
+        });
+      });
+
+      if (!requests.length) { showToast('No changes to save', 'info'); return; }
+
+      Promise.all(requests)
+        .then(function (responses) {
+          if (responses.every(function (r) { return r.ok; })) {
+            showToast('Match ' + m.match_number + ' updated', 'success');
+            if (editorRow) editorRow.remove();
+          } else {
+            showToast('Some saves failed', 'error');
+          }
+        })
+        .catch(function () { showToast('Save failed', 'error'); });
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
     // PINS TAB
     // ════════════════════════════════════════════════════════════════════════════
     var PIN_FIELDS = [
@@ -782,7 +1161,16 @@
     // ════════════════════════════════════════════════════════════════════════════
     // PLAYOFFS TAB
     // ════════════════════════════════════════════════════════════════════════════
-    var playoffsRankList, playoffsAllianceContainer;
+    var playoffsRankList, playoffsAllianceContainer, bracketMatchesContainer;
+    var gAlliances = [];
+    var gBracket = [];
+
+    // Mirrors bracket.js's getAllianceCount() thresholds.
+    function getAllianceCountClient(teamCount) {
+      if (teamCount >= 24) return 8;
+      if (teamCount >= 18) return 6;
+      return 4;
+    }
 
     function buildPlayoffsTab() {
       var p = panels.playoffs;
@@ -805,7 +1193,19 @@
       allianceSection.appendChild(playoffsAllianceContainer);
       p.appendChild(allianceSection);
 
+      var bracketSection = makeAdminSection('Bracket Matches');
+      var bracketHint = document.createElement('div');
+      bracketHint.style.cssText = 'font-size:0.82rem;color:var(--text2);margin-bottom:0.6rem;';
+      bracketHint.textContent = 'Assign red/blue for each slot (base seed, or the winner/loser of an already-decided match), then Create Match once both sides are set. Winners are recorded automatically when a linked playoff match is committed.';
+      bracketSection.appendChild(bracketHint);
+      bracketMatchesContainer = document.createElement('div');
+      bracketSection.appendChild(bracketMatchesContainer);
+      p.appendChild(bracketSection);
+
       buildAllianceRows();
+      connectBracketSocket();
+      fetchAlliances();
+      fetchBracket();
     }
 
     function renderPlayoffsRankings() {
@@ -827,14 +1227,40 @@
         row.appendChild(name);
         playoffsRankList.appendChild(row);
       });
+      buildAllianceRows();
+      renderBracketMatches();
+    }
+
+    function fetchAlliances() {
+      fetch('/api/alliances')
+        .then(function (r) { return r.json(); })
+        .then(function (rows) { gAlliances = rows || []; buildAllianceRows(); })
+        .catch(function () {});
+    }
+
+    function fetchBracket() {
+      fetch('/api/bracket')
+        .then(function (r) { return r.json(); })
+        .then(function (rows) { gBracket = rows || []; renderBracketMatches(); })
+        .catch(function () {});
+    }
+
+    function connectBracketSocket() {
+      var sock = SK.connectSocket();
+      if (!sock || sock.__bracketBound) return;
+      sock.__bracketBound = true;
+      sock.on('bracket_update', function (rows) { gBracket = rows || []; renderBracketMatches(); });
     }
 
     function buildAllianceRows() {
       if (!playoffsAllianceContainer) return;
       while (playoffsAllianceContainer.firstChild) playoffsAllianceContainer.removeChild(playoffsAllianceContainer.firstChild);
 
-      for (var i = 1; i <= 4; i++) {
+      var count = getAllianceCountClient(gTeams.length);
+      for (var i = 1; i <= count; i++) {
         (function (allianceNum) {
+          var existing = gAlliances.find(function (a) { return a.alliance_number === allianceNum; });
+
           var row = document.createElement('div');
           row.className = 'alliance-bracket-row';
 
@@ -842,11 +1268,8 @@
           lbl.textContent = 'Alliance ' + allianceNum;
           lbl.style.fontWeight = '700';
 
-          var captainInp = makeInput('number', 'Captain #', '');
-          captainInp.placeholder = 'Captain';
-
-          var partnerInp = makeInput('number', 'Partner #', '');
-          partnerInp.placeholder = 'Partner';
+          var captainInp = makeInput('number', 'Captain #', existing && existing.captain_number ? existing.captain_number : '');
+          var partnerInp = makeInput('number', 'Partner #', existing && existing.partner_number ? existing.partner_number : '');
 
           var saveBtn = document.createElement('button');
           saveBtn.textContent = 'Save';
@@ -867,7 +1290,7 @@
       if (!confirm('Initialize the playoff bracket?')) return;
       fetch('/api/bracket/init', { method: 'POST' })
         .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
-        .then(function () { showToast('Bracket initialized', 'success'); })
+        .then(function () { showToast('Bracket initialized', 'success'); fetchBracket(); })
         .catch(function () { showToast('Failed to initialize bracket', 'error'); });
     }
 
@@ -876,16 +1299,567 @@
       fetch('/api/alliances', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ alliance_number: num, captain: parseInt(captain, 10), partner: parseInt(partner, 10) || null }),
+        body: JSON.stringify({
+          alliance_number: num,
+          captainNumber: parseInt(captain, 10),
+          partnerNumber: parseInt(partner, 10) || null,
+        }),
+      })
+        .then(function (r) { if (!r.ok) return r.json().then(function (e) { throw new Error(e.error); }); return r.json(); })
+        .then(function () { showToast('Alliance ' + num + ' saved', 'success'); fetchAlliances(); fetchBracket(); })
+        .catch(function (e) { showToast(e.message || 'Save failed', 'error'); });
+    }
+
+    // ── Bracket Matches management ─────────────────────────────────────────────
+
+    function bracketRoundLabel(round, slot) {
+      return round + ' #' + slot;
+    }
+
+    function renderBracketMatches() {
+      if (!bracketMatchesContainer) return;
+      while (bracketMatchesContainer.firstChild) bracketMatchesContainer.removeChild(bracketMatchesContainer.firstChild);
+
+      if (!gBracket.length) {
+        var empty = document.createElement('div');
+        empty.style.cssText = 'font-size:0.85rem;color:var(--text2);';
+        empty.textContent = 'No bracket yet — click Initialize Bracket above.';
+        bracketMatchesContainer.appendChild(empty);
+        return;
+      }
+
+      gBracket.forEach(function (bm) {
+        bracketMatchesContainer.appendChild(buildBracketMatchRow(bm));
+      });
+    }
+
+    // Options for a side's <select>: fixed seed numbers, plus winner/loser of
+    // any bracket match that already has a recorded result.
+    function allianceOptionsFor(excludeId) {
+      var opts = [{ value: '', label: '— unassigned —' }];
+      var count = getAllianceCountClient(gTeams.length);
+      for (var i = 1; i <= count; i++) opts.push({ value: String(i), label: 'Alliance ' + i });
+      gBracket.forEach(function (bm) {
+        if (bm.id === excludeId || bm.winner_alliance == null) return;
+        var loserAlliance = bm.winner_alliance === bm.red_alliance ? bm.blue_alliance : bm.red_alliance;
+        var label = bracketRoundLabel(bm.bracket_round, bm.bracket_slot);
+        opts.push({ value: 'w:' + bm.winner_alliance, label: 'Winner of ' + label });
+        if (loserAlliance != null) opts.push({ value: 'l:' + loserAlliance, label: 'Loser of ' + label });
+      });
+      return opts;
+    }
+
+    function buildBracketMatchRow(bm) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;padding:0.5rem 0;border-bottom:1px solid var(--border);';
+
+      var label = document.createElement('div');
+      label.style.cssText = 'min-width:110px;font-weight:700;font-size:0.85rem;';
+      label.textContent = bracketRoundLabel(bm.bracket_round, bm.bracket_slot);
+      row.appendChild(label);
+
+      ['red', 'blue'].forEach(function (side) {
+        var current = side === 'red' ? bm.red_alliance : bm.blue_alliance;
+        var sel = document.createElement('select');
+        sel.style.cssText = 'min-width:150px;' + (side === 'red' ? 'color:var(--red-light);' : 'color:var(--blue-light);');
+        allianceOptionsFor(bm.id).forEach(function (o) {
+          var opt = document.createElement('option');
+          opt.value = o.value;
+          opt.textContent = o.label;
+          if (current != null && o.value === String(current)) opt.selected = true;
+          sel.appendChild(opt);
+        });
+        sel.disabled = !!bm.match_id;
+        sel.addEventListener('change', function () {
+          var raw = sel.value;
+          var allianceNumber = null;
+          if (raw) allianceNumber = raw.indexOf(':') !== -1 ? parseInt(raw.split(':')[1], 10) : parseInt(raw, 10);
+          fetch('/api/bracket/matches/' + bm.id + '/assign', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ side: side, allianceNumber: allianceNumber }),
+          })
+            .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+            .then(function () { showToast(bracketRoundLabel(bm.bracket_round, bm.bracket_slot) + ' ' + side + ' set', 'success'); })
+            .catch(function () { showToast('Assign failed', 'error'); });
+        });
+        row.appendChild(sel);
+      });
+
+      var actionSlot = document.createElement('div');
+      actionSlot.style.cssText = 'font-size:0.82rem;color:var(--text2);';
+
+      if (bm.match_id) {
+        var stateLabel = bm.match_state || 'UPCOMING';
+        var scoreLabel = (bm.redScore != null && bm.blueScore != null) ? (' — ' + bm.redScore + '-' + bm.blueScore) : '';
+        actionSlot.textContent = 'Match P' + (bm.matchNumber != null ? bm.matchNumber : bm.match_id) + ' (' + stateLabel + ')' + scoreLabel;
+        if (bm.winner) {
+          var badge = document.createElement('span');
+          badge.style.cssText = 'margin-left:0.5rem;color:var(--green);font-weight:700;';
+          badge.textContent = bm.winner.toUpperCase() + ' WINS';
+          actionSlot.appendChild(badge);
+        } else if (stateLabel === 'COMPLETED') {
+          // Tie or otherwise unresolved — offer a manual override.
+          ['red', 'blue'].forEach(function (side) {
+            var btn = document.createElement('button');
+            btn.textContent = 'Set ' + side.toUpperCase() + ' winner';
+            btn.style.marginLeft = '0.4rem';
+            btn.addEventListener('click', function () {
+              var winnerAlliance = side === 'red' ? bm.red_alliance : bm.blue_alliance;
+              fetch('/api/bracket/matches/' + bm.id + '/winner', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ winnerAlliance: winnerAlliance }),
+              })
+                .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+                .then(function () { showToast('Winner recorded', 'success'); })
+                .catch(function () { showToast('Failed to record winner', 'error'); });
+            });
+            actionSlot.appendChild(btn);
+          });
+        }
+      } else if (bm.red_alliance != null && bm.blue_alliance != null) {
+        var createBtn = document.createElement('button');
+        createBtn.className = 'success-btn';
+        createBtn.textContent = 'Create Match';
+        createBtn.addEventListener('click', function () {
+          fetch('/api/bracket/matches/' + bm.id + '/create-match', { method: 'POST' })
+            .then(function (r) { if (!r.ok) return r.json().then(function (e) { throw new Error(e.error); }); return r.json(); })
+            .then(function (d) { showToast('Match P' + d.matchNumber + ' created', 'success'); })
+            .catch(function (e) { showToast(e.message || 'Failed to create match', 'error'); });
+        });
+        actionSlot.appendChild(createBtn);
+      } else {
+        actionSlot.textContent = 'Waiting on both sides';
+      }
+
+      row.appendChild(actionSlot);
+      return row;
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // NOTES TAB
+    // ════════════════════════════════════════════════════════════════════════════
+    var gNotes = [];
+    var adminSelectedNoteTeam = null; // { alliance, teamNumber } or null for a general note
+    var notesMatchSelect, notesTeamPicker, notesTextarea, notesAddBtn, notesSearchInput, notesListEl;
+
+    function buildNotesTab() {
+      var p = panels.notes;
+
+      var addSection = makeAdminSection('Add Note');
+
+      notesMatchSelect = document.createElement('select');
+      notesMatchSelect.style.marginBottom = '0.75rem';
+      notesMatchSelect.addEventListener('change', renderNotesTeamPicker);
+      addSection.appendChild(notesMatchSelect);
+
+      notesTeamPicker = document.createElement('div');
+      notesTeamPicker.className = 'note-team-picker';
+      addSection.appendChild(notesTeamPicker);
+
+      notesTextarea = document.createElement('textarea');
+      notesTextarea.className = 'note-textarea';
+      notesTextarea.placeholder = 'Note text…';
+      addSection.appendChild(notesTextarea);
+
+      notesAddBtn = document.createElement('button');
+      notesAddBtn.className = 'btn-add-note';
+      notesAddBtn.textContent = 'Add Note';
+      notesAddBtn.addEventListener('click', submitAdminNote);
+      addSection.appendChild(notesAddBtn);
+
+      p.appendChild(addSection);
+
+      var listSection = makeAdminSection('All Notes');
+
+      notesSearchInput = document.createElement('input');
+      notesSearchInput.className = 'note-search';
+      notesSearchInput.placeholder = 'Search by team # or match #';
+      notesSearchInput.addEventListener('input', renderNotesList);
+      listSection.appendChild(notesSearchInput);
+
+      notesListEl = document.createElement('div');
+      notesListEl.className = 'notes-list';
+      listSection.appendChild(notesListEl);
+
+      p.appendChild(listSection);
+
+      fetchNotes();
+      connectNotesSocket();
+    }
+
+    // Called after gMatches refreshes (fetchMatches) so the match picker stays current.
+    function renderNotesMatchSelect() {
+      if (!notesMatchSelect) return;
+      var prevValue = notesMatchSelect.value;
+      while (notesMatchSelect.firstChild) notesMatchSelect.removeChild(notesMatchSelect.firstChild);
+      gMatches.slice().sort(function (a, b) { return a.match_number - b.match_number; }).forEach(function (m) {
+        var opt = document.createElement('option');
+        opt.value = m.id;
+        opt.textContent = (m.phase === 'playoffs' ? 'P' : 'Q') + m.match_number;
+        notesMatchSelect.appendChild(opt);
+      });
+      if (prevValue && gMatches.some(function (m) { return String(m.id) === prevValue; })) {
+        notesMatchSelect.value = prevValue;
+      }
+      renderNotesTeamPicker();
+    }
+
+    function currentNotesMatch() {
+      var id = Number(notesMatchSelect.value);
+      return gMatches.find(function (m) { return m.id === id; }) || null;
+    }
+
+    function renderNotesTeamPicker() {
+      if (!notesTeamPicker) return;
+      while (notesTeamPicker.firstChild) notesTeamPicker.removeChild(notesTeamPicker.firstChild);
+      adminSelectedNoteTeam = null;
+
+      var generalBtn = document.createElement('button');
+      generalBtn.type = 'button';
+      generalBtn.className = 'note-team-btn selected for-general';
+      generalBtn.textContent = 'General';
+      generalBtn.addEventListener('click', function () { selectAdminNoteTeam(null, generalBtn); });
+      notesTeamPicker.appendChild(generalBtn);
+
+      var match = currentNotesMatch();
+      if (!match) return;
+
+      function addTeamBtn(alliance, team) {
+        if (!team) return;
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'note-team-btn for-' + alliance;
+        btn.textContent = 'Team ' + team.number;
+        btn.addEventListener('click', function () { selectAdminNoteTeam({ alliance: alliance, teamNumber: team.number }, btn); });
+        notesTeamPicker.appendChild(btn);
+      }
+      addTeamBtn('red',  match.red1_team);
+      addTeamBtn('red',  match.red2_team);
+      addTeamBtn('blue', match.blue1_team);
+      addTeamBtn('blue', match.blue2_team);
+    }
+
+    function selectAdminNoteTeam(team, btnEl) {
+      adminSelectedNoteTeam = team;
+      notesTeamPicker.querySelectorAll('.note-team-btn').forEach(function (b) {
+        b.classList.toggle('selected', b === btnEl);
+      });
+    }
+
+    function submitAdminNote() {
+      var match = currentNotesMatch();
+      if (!match) { showToast('No match selected', 'error'); return; }
+      var text = (notesTextarea.value || '').trim();
+      if (!text) { showToast('Note text is empty', 'error'); return; }
+
+      fetch('/api/notes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          matchId:    match.id,
+          alliance:   adminSelectedNoteTeam ? adminSelectedNoteTeam.alliance : null,
+          teamNumber: adminSelectedNoteTeam ? adminSelectedNoteTeam.teamNumber : null,
+          note:       text,
+          author:     'admin',
+        }),
       })
         .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
-        .then(function () { showToast('Alliance ' + num + ' saved', 'success'); })
-        .catch(function () { showToast('Save failed', 'error'); });
+        .then(function () {
+          notesTextarea.value = '';
+          showToast('Note added', 'success');
+        })
+        .catch(function () { showToast('Failed to add note', 'error'); });
+    }
+
+    function fetchNotes() {
+      fetch('/api/notes')
+        .then(function (r) { return r.json(); })
+        .then(function (notes) { gNotes = notes || []; renderNotesList(); })
+        .catch(function () {});
+    }
+
+    function connectNotesSocket() {
+      var sock = SK.connectSocket();
+      if (!sock) return;
+      sock.on('note_added', function (note) {
+        if (!note) return;
+        gNotes.unshift(note);
+        renderNotesList();
+      });
+      sock.on('note_updated', function (note) {
+        if (!note) return;
+        var idx = gNotes.findIndex(function (n) { return n.id === note.id; });
+        if (idx !== -1) gNotes[idx] = note;
+        renderNotesList();
+      });
+      sock.on('note_removed', function (data) {
+        if (!data) return;
+        gNotes = gNotes.filter(function (n) { return n.id !== data.id; });
+        renderNotesList();
+      });
+    }
+
+    var notesViewMode      = 'list'; // 'list' (all matches) | 'detail' (one match's notes)
+    var notesDetailMatchId = null;
+
+    // Renders either the match list or a single match's note detail,
+    // depending on notesViewMode.
+    function renderNotesList() {
+      if (!notesListEl) return;
+      if (notesViewMode === 'detail') {
+        renderNotesDetail();
+      } else {
+        renderNotesMatchList();
+      }
+    }
+
+    function openNotesMatch(matchId) {
+      notesViewMode = 'detail';
+      notesDetailMatchId = matchId;
+      renderNotesList();
+    }
+
+    function backToNotesMatchList() {
+      notesViewMode = 'list';
+      notesDetailMatchId = null;
+      renderNotesList();
+    }
+
+    function renderNotesMatchList() {
+      var query = (notesSearchInput.value || '').trim().toLowerCase();
+      var matches = gMatches.slice().sort(function (a, b) { return a.match_number - b.match_number; });
+
+      if (query) {
+        matches = matches.filter(function (m) {
+          if (String(m.match_number).indexOf(query) !== -1) return true;
+          return gNotes.some(function (n) {
+            return n.match_id === m.id && n.team_number != null && String(n.team_number).indexOf(query) !== -1;
+          });
+        });
+      }
+
+      while (notesListEl.firstChild) notesListEl.removeChild(notesListEl.firstChild);
+
+      if (!matches.length) {
+        var empty = document.createElement('div');
+        empty.className = 'note-empty';
+        empty.textContent = query ? 'No matches found.' : 'No matches yet.';
+        notesListEl.appendChild(empty);
+        return;
+      }
+
+      matches.forEach(function (m) {
+        var count = gNotes.filter(function (n) { return n.match_id === m.id; }).length;
+
+        var row = document.createElement('div');
+        row.className = 'note-match-row';
+        row.addEventListener('click', function () { openNotesMatch(m.id); });
+
+        var label = document.createElement('span');
+        label.className = 'note-match-row-label';
+        label.textContent = (m.phase === 'playoffs' ? 'P' : 'Q') + m.match_number;
+        row.appendChild(label);
+
+        var countEl = document.createElement('span');
+        countEl.className = 'note-match-row-count' + (count ? ' has-notes' : '');
+        countEl.textContent = count ? (count === 1 ? '1 note' : count + ' notes') : 'No notes';
+        row.appendChild(countEl);
+
+        notesListEl.appendChild(row);
+      });
+    }
+
+    function renderNotesDetail() {
+      var match = gMatches.find(function (m) { return m.id === notesDetailMatchId; });
+
+      while (notesListEl.firstChild) notesListEl.removeChild(notesListEl.firstChild);
+
+      var backBtn = document.createElement('button');
+      backBtn.type = 'button';
+      backBtn.className = 'note-back-btn';
+      backBtn.textContent = '← All matches';
+      backBtn.addEventListener('click', backToNotesMatchList);
+      notesListEl.appendChild(backBtn);
+
+      var heading = document.createElement('div');
+      heading.className = 'note-detail-heading';
+      heading.textContent = match
+        ? ((match.phase === 'playoffs' ? 'Playoff ' : 'Qualification ') + match.match_number)
+        : ('Match #' + notesDetailMatchId);
+      notesListEl.appendChild(heading);
+
+      var matchNotes = gNotes.filter(function (n) { return n.match_id === notesDetailMatchId; });
+      if (!matchNotes.length) {
+        var empty = document.createElement('div');
+        empty.className = 'note-empty';
+        empty.textContent = 'No notes for this match yet.';
+        notesListEl.appendChild(empty);
+        return;
+      }
+
+      matchNotes.forEach(function (note) { notesListEl.appendChild(buildAdminNoteItem(note)); });
+    }
+
+    function buildAdminNoteItem(note) {
+      var item = document.createElement('div');
+      item.className = 'note-item';
+
+      var header = document.createElement('div');
+      header.className = 'note-item-header';
+
+      var matchEl = document.createElement('span');
+      matchEl.className = 'note-item-match';
+      matchEl.textContent = note.match_number != null ? ('Match ' + note.match_number) : ('Match #' + note.match_id);
+      header.appendChild(matchEl);
+
+      var teamEl = document.createElement('span');
+      if (note.team_number != null) {
+        teamEl.className = 'note-item-team ' + (note.alliance || '');
+        teamEl.textContent = (note.alliance || '').toUpperCase() + ' — Team ' + note.team_number;
+      } else {
+        teamEl.className = 'note-item-team general';
+        teamEl.textContent = 'General';
+      }
+      header.appendChild(teamEl);
+
+      var authorEl = document.createElement('span');
+      authorEl.className = 'note-item-time';
+      authorEl.textContent = (note.author || 'headref') + ' · ' + (note.created_at
+        ? new Date(note.created_at * 1000).toLocaleString([], { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+        : '');
+      header.appendChild(authorEl);
+
+      item.appendChild(header);
+
+      var textEl = document.createElement('div');
+      textEl.className = 'note-item-text';
+      textEl.textContent = note.note;
+      item.appendChild(textEl);
+
+      var actions = document.createElement('div');
+      actions.className = 'note-item-actions';
+
+      var editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.textContent = 'Edit';
+      editBtn.addEventListener('click', function () { startEditAdminNote(item, note); });
+      actions.appendChild(editBtn);
+
+      var delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'note-del';
+      delBtn.textContent = 'Delete';
+      delBtn.addEventListener('click', function () {
+        if (!confirm('Delete this note?')) return;
+        fetch('/api/notes/' + note.id, { method: 'DELETE' })
+          .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+          .then(function () { showToast('Note deleted', 'info'); })
+          .catch(function () { showToast('Failed to delete note', 'error'); });
+      });
+      actions.appendChild(delBtn);
+
+      item.appendChild(actions);
+      return item;
+    }
+
+    function startEditAdminNote(item, note) {
+      while (item.firstChild) item.removeChild(item.firstChild);
+
+      var textarea = document.createElement('textarea');
+      textarea.className = 'note-item-edit-textarea';
+      textarea.value = note.note;
+      item.appendChild(textarea);
+
+      var actions = document.createElement('div');
+      actions.className = 'note-item-actions';
+
+      var saveBtn = document.createElement('button');
+      saveBtn.type = 'button';
+      saveBtn.className = 'note-save';
+      saveBtn.textContent = 'Save';
+      saveBtn.addEventListener('click', function () {
+        var newText = textarea.value.trim();
+        if (!newText) { showToast('Note text is empty', 'error'); return; }
+        fetch('/api/notes/' + note.id, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ note: newText }),
+        })
+          .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+          .then(function () { showToast('Note updated', 'success'); })
+          .catch(function () { showToast('Failed to update note', 'error'); });
+      });
+      actions.appendChild(saveBtn);
+
+      var cancelBtn = document.createElement('button');
+      cancelBtn.type = 'button';
+      cancelBtn.textContent = 'Cancel';
+      cancelBtn.addEventListener('click', renderNotesList);
+      actions.appendChild(cancelBtn);
+
+      item.appendChild(actions);
     }
 
     // ════════════════════════════════════════════════════════════════════════════
     // RESET TAB
     // ════════════════════════════════════════════════════════════════════════════
+    function buildAccessTab() {
+      var p = panels.access;
+      var section = makeAdminSection('Scan to Join');
+      var help = document.createElement('p');
+      help.style.color = 'var(--text2)';
+      help.style.marginBottom = '0.75rem';
+      help.textContent = 'Refs and organizers on the same network can scan this to open the site and pick their role (scorer, referee, head referee, etc).';
+      section.appendChild(help);
+
+      var qrBox = document.createElement('div');
+      qrBox.style.cssText = 'display:flex; justify-content:center; padding:1rem; background:#fff; border-radius:8px; max-width:260px; margin-bottom:1rem;';
+      section.appendChild(qrBox);
+
+      var urlList = document.createElement('div');
+      urlList.style.cssText = 'display:flex; flex-direction:column; gap:0.3rem; font-size:0.9rem; color:var(--text2);';
+      section.appendChild(urlList);
+
+      p.appendChild(section);
+
+      fetch('/api/network-info')
+        .then(function (r) { return r.json(); })
+        .then(function (info) {
+          var url = (info.urls && info.urls[0]) || (location.origin);
+          if (typeof qrcode === 'function') {
+            var qr = qrcode(0, 'M');
+            qr.addData(url);
+            qr.make();
+            var img = document.createElement('img');
+            img.src = qr.createDataURL(6, 4);
+            img.alt = 'QR code: ' + url;
+            img.style.cssText = 'max-width:100%; height:auto;';
+            qrBox.appendChild(img);
+          }
+          var urls = (info.urls && info.urls.length) ? info.urls : [location.origin];
+          urls.forEach(function (u) {
+            var line = document.createElement('div');
+            line.textContent = u;
+            line.style.fontWeight = '700';
+            line.style.color = 'var(--text)';
+            urlList.appendChild(line);
+          });
+          if (!info.urls || !info.urls.length) {
+            var note = document.createElement('div');
+            note.textContent = 'No network interface detected — only accessible from this machine.';
+            urlList.appendChild(note);
+          }
+        })
+        .catch(function () {
+          var err = document.createElement('div');
+          err.textContent = 'Could not load network info.';
+          err.style.color = 'var(--red-light)';
+          urlList.appendChild(err);
+        });
+    }
+
     function buildResetTab() {
       var p = panels.reset;
       var section = makeAdminSection('Full Reset');

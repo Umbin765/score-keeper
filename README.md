@@ -83,11 +83,12 @@ Six woff2 files (~92 KB total) are bundled in `public/fonts/` and served via the
 
 ### Responsive Design Breakpoints
 
-Ref and scorer views (`ref.html`, `ref-blue.html`, `red.html`, `blue.html`, `headref.html`) are designed mobile-first. The match controller (`control.html`) is desktop-only.
+Ref and scorer views (`referee.html`, `red.html`, `blue.html`, `headref.html`) are designed mobile-first. The match controller (`control.html`) is desktop-only.
 
 | Breakpoint | Applied to | Effect |
 |------------|-----------|--------|
 | `min-width: 900px` | `headref.html` | 2-column grid (penalty buttons left, log + actions right) |
+| `min-width: 900px` | `referee.html` | 2-column grid (penalty buttons left, log right) |
 | `min-width: 1000px` | `control.html` | 2-column grid (pipeline/timer/scores left, motif right) |
 
 Ref and scorer views use `clamp()` for fluid type scaling and `env(safe-area-inset-top/bottom)` for notch-safe layout on tablets.
@@ -106,8 +107,7 @@ Ref and scorer views use `clamp()` for fluid type scaling and `env(safe-area-ins
 | `/control` | control.html | PIN | Match controller (pipeline, timer, motif, scores) |
 | `/red` | red.html | PIN | Red alliance scorer (touch-optimized tablet) |
 | `/blue` | blue.html | PIN | Blue alliance scorer (touch-optimized tablet) |
-| `/ref-red` | ref.html | PIN | Red field referee (minor/major fouls) |
-| `/ref-blue` | ref-blue.html | PIN | Blue field referee (minor/major fouls) |
+| `/referee` | referee.html | PIN | Field referee — fouls and cards for both alliances |
 | `/headref` | headref.html | PIN | Head referee (all penalties, cards, commit/replay) |
 | `/queue` | queue.html | PIN | Queue display (large-font, on-field/queued/upcoming) |
 | `/admin` | admin.html | Password | Admin panel (teams, settings, schedule, reset) |
@@ -254,6 +254,46 @@ SQLite database stored at `scorekeeper.db` in project root. WAL journal mode, fo
 | `match_id` | INTEGER | REFERENCES matches(id) |
 | | | UNIQUE(bracket_round, bracket_slot) |
 
+### `sessions`
+
+| Column | Type | Constraints |
+|--------|------|-------------|
+| `sid` | TEXT | PRIMARY KEY |
+| `sess` | TEXT | NOT NULL — JSON-serialized session data |
+| `expires` | INTEGER | NOT NULL — epoch ms |
+
+Backs the login session store (see `session-store.js`) so PIN logins survive server restarts, not just page refreshes.
+
+### `notes`
+
+| Column | Type | Constraints |
+|--------|------|-------------|
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT |
+| `match_id` | INTEGER | NOT NULL, REFERENCES matches(id) |
+| `alliance` | TEXT | CHECK IN ('red','blue'), nullable — null for a general (non-team-tagged) note |
+| `team_number` | INTEGER | nullable — null for a general note |
+| `note` | TEXT | NOT NULL |
+| `author` | TEXT | NOT NULL, DEFAULT 'headref' — 'headref' or 'admin' |
+| `created_at` | INTEGER | NOT NULL, DEFAULT unixepoch() |
+| `updated_at` | INTEGER | NOT NULL, DEFAULT unixepoch() — bumped on edit |
+
+Head Referee / Admin notes system (see `headref.html`'s Notes tab and `admin.html`'s Notes tab). Each note is tied to a match and optionally tagged to one team + alliance; untagged notes are "general" match notes. Searchable by team number or match number.
+
+### `rp_overrides`
+
+| Column | Type | Constraints |
+|--------|------|-------------|
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT |
+| `match_id` | INTEGER | NOT NULL, REFERENCES matches(id) |
+| `alliance` | TEXT | NOT NULL, CHECK IN ('red','blue') |
+| `category` | TEXT | NOT NULL, CHECK IN ('win','park','pattern','ball') |
+| `mode` | TEXT | NOT NULL, CHECK IN ('grant','exclude','override') |
+| `value` | REAL | nullable — only used when `mode='override'` |
+| `created_at` | INTEGER | NOT NULL, DEFAULT unixepoch() — bumped when the override is changed |
+| | | UNIQUE(match_id, alliance, category) |
+
+Head Referee RP Violations system (see `headref.html`'s "RP Violations" tab). At most one override per alliance/category/match — setting a new mode for the same category replaces it in place (same row `id`, upserted via `ON CONFLICT`). Three modes: **grant** (forces the category to its max — 2 for park/pattern/ball, `rp_win` for win/loss), **exclude** (forces it to 0, and the alliance cannot earn it back by playing better), **override** (forces it to an exact referee-supplied value, taking precedence over everything including a red-card DQ). Deleting the row (`DELETE /api/matches/:id/rp-overrides/:alliance/:category`) reverts that category to normal auto-calculation. See `scoring.js`'s `computeRpBreakdown()`.
+
 ---
 
 ## Default Settings
@@ -282,12 +322,14 @@ SQLite database stored at `scorekeeper.db` in project root. WAL journal mode, fo
 | `rp_win` | 4 | RP for winning a match |
 | `rp_tie` | 2 | RP for a tied match |
 | `rp_loss` | 0 | RP for losing a match |
-| `rp_park_threshold_1` | 63 | Park score for 1 bonus RP |
-| `rp_park_threshold_2` | 90 | Park score for 2 bonus RP |
-| `rp_pattern_threshold_1` | 23 | Artifacts sorted for 1 bonus RP |
-| `rp_pattern_threshold_2` | 33 | Artifacts sorted for 2 bonus RP |
-| `rp_ball_threshold_1` | 210 | Balls scored for 1 bonus RP |
-| `rp_ball_threshold_2` | 300 | Balls scored for 2 bonus RP |
+| `rp_park_threshold_1` | 60 | Movement score (LEAVE + BASE points) for 1 bonus RP |
+| `rp_park_threshold_2` | 85 | Movement score (LEAVE + BASE points) for 2 bonus RP |
+| `rp_pattern_threshold_1` | 50 | Pattern points (matched artifacts × `pts_auto_pattern`) for 1 bonus RP |
+| `rp_pattern_threshold_2` | 72 | Pattern points for 2 bonus RP |
+| `rp_ball_threshold_1` | 210 | Goal artifacts (classified + overflow, auto + teleop) for 1 bonus RP |
+| `rp_ball_threshold_2` | 300 | Goal artifacts for 2 bonus RP |
+
+Thresholds and formulas above match the SEC Game Manual's Movement RP / Pattern RP / Goal RP definitions. On upgrade, `db.js` migrates any database still holding the old defaults (63/90/23/33) to the new ones (60/85/50/72) — a value an admin deliberately customized to something else is left untouched.
 
 ### Default Period Structure
 
@@ -351,6 +393,9 @@ Computes the complete score for one alliance. Reads `match_scores`, `endgame_cyc
 }
 ```
 
+#### `isAllianceRedCarded(db, matchId, alliance) -> boolean`
+True when an alliance has **any** red card recorded in `match_scores.red_cards` for this match (any one team is enough — per the SEC Game Manual, a single confirmed red card ends the match immediately, unlike the earlier full-alliance-DQ rule). Used by `server.js` to force an early match end and by `computeRpBreakdown` to auto-grant the opposing alliance's full RP.
+
 ---
 
 ### `timer.js` — Match Timer State Machine
@@ -386,6 +431,7 @@ Owns a `setInterval` ticking once per second. Emits Socket.io events to all conn
 | `pause` | `() -> void` | Clears interval, emits `match_paused` |
 | `resume` | `() -> void` | Restarts interval, emits `match_resumed` |
 | `abort` | `() -> void` | Resets all state, emits `match_abort` |
+| `forceEnd` | `() -> boolean` | Ends the match immediately, the same way a normal period runout would (`matchEnded=true`, emits `match_end`, scores stand as-is for review/commit) — unlike `abort()`, does not discard state. Used when any team receives a red card (per the SEC Game Manual). Returns false if no match loaded or already ended. |
 | `manualAdvance` | `() -> void` | Force-advances to next period |
 
 **Internal Methods:**
@@ -404,26 +450,38 @@ Owns a `setInterval` ticking once per second. Emits Socket.io events to all conn
 Returns the total score for one alliance via `getFullScore().total`. Includes opponent penalty points.
 
 #### `calculateParkScore(db, matchId, alliance) -> number`
-Computes park-only score from `endgame_cycles` for RP threshold checking. Awards partial/full park points per robot per cycle, plus bonus when both robots achieve full park in the same cycle.
+Computes park-only (BASE) score from `endgame_cycles`. Awards partial/full park points per robot per cycle, plus bonus when both robots achieve full park in the same cycle. Used as half of Movement RP (see `calculateLeaveScore` below).
 
-#### `calculateArtifactsSorted(db, matchId, alliance) -> number`
-Returns `auto_classified + teleop_classified` for pattern RP threshold checking.
+#### `calculateLeaveScore(db, matchId, alliance) -> number`
+Returns AUTO LEAVE points (`auto_leave_r1 + auto_leave_r2` count × `pts_auto_leave`). Added to `calculateParkScore` to form the "Movement RP" threshold quantity — the SEC Game Manual defines Movement RP as **combined LEAVE + BASE points**, not BASE alone.
 
-#### `calculateBallsScored(db, matchId, alliance) -> number`
-Returns `teleop_balls` for ball RP threshold checking.
+#### `calculatePatternPoints(db, matchId, alliance) -> number`
+Returns PATTERN points: `(auto_pattern + teleop_pattern)` matched-artifact count × `pts_auto_pattern` (2 by default). Used for Pattern RP threshold checking (50/72 points, per the SEC Game Manual).
+
+#### `calculateGoalArtifacts(db, matchId, alliance) -> number`
+Returns the number of ARTIFACTS scored through the goal: `auto_classified + auto_overflow + teleop_classified + teleop_overflow`. Used for Goal RP threshold checking (210/300 artifacts, per the SEC Game Manual).
+
+#### `getRpOverrides(db, matchId, alliance) -> Object`
+Returns active Head Referee RP overrides for one alliance, keyed by category (`win`/`park`/`pattern`/`ball`) — each value is the raw `rp_overrides` row, or absent if no override is set for that category. Backs the RP Violations tab in `headref.html` and the `/api/matches/:id/rp-overrides` endpoints.
+
+#### `applyRpOverride(override, computedValue, maxValue) -> number`
+Resolves one category's effective RP: no override → `computedValue` unchanged; `grant` → `maxValue`; `exclude` → 0; `override` → the referee's exact `value`.
+
+#### `computeRpBreakdown(db, matchId, alliance) -> Object`
+Shared implementation behind `calculateRP` and `computeLiveRP`. Computes each RP category from game state (all four categories zeroed if the alliance has a red card / DQ), then applies any `rp_overrides` on top — so an `override` can restore RP even for a DQ'd alliance, since overrides are resolved after the DQ zeroing. Per the SEC Game Manual, if the *opponent* has any red card (`isAllianceRedCarded`), this alliance is awarded the maximum of every RP category (Win RP = `rp_win`, Park/Pattern/Ball RP = 2 each) regardless of the raw score comparison — a single confirmed red card ends the match for everyone, not just a full-alliance DQ. Returns:
+```javascript
+{ winLossRp, parkRp, patternRp, ballRp, total, overrides }
+```
 
 #### `calculateRP(db, matchId, alliance) -> number`
-Calculates total ranking points earned by one alliance. Returns 0 if alliance has a red card (DQ). Otherwise sums:
+Calculates total ranking points earned by one alliance — `computeRpBreakdown(...).total`. Auto-calculated categories (absent any override or opponent red card):
 - Win/Tie/Loss RP (4/2/0 default)
-- Park RP (0/1/2 based on park score vs thresholds 63/90)
-- Pattern RP (0/1/2 based on artifacts sorted vs thresholds 23/33)
-- Ball RP (0/1/2 based on balls scored vs thresholds 210/300)
+- Movement RP — "park" category (0/1/2 based on LEAVE + BASE points vs thresholds 60/85)
+- Pattern RP (0/1/2 based on PATTERN points vs thresholds 50/72)
+- Goal RP — "ball" category (0/1/2 based on goal artifact count vs thresholds 210/300)
 
 #### `computeLiveRP(db, matchId, alliance) -> Object`
-Returns live RP breakdown for display overlay:
-```javascript
-{ winLossRp, parkRp, patternRp, ballRp, total }
-```
+Returns live RP breakdown for display overlay and the RP Violations tab — same shape as `computeRpBreakdown`.
 
 #### `calculateOPR(db) -> Object`
 Computes OPR (Offensive Power Rating) for all teams using least-squares over committed qualification matches. Builds the normal equations `A^T A · x = A^T b` where each alliance gives one equation `OPR(t1) + OPR(t2) = offensive_score` (penalty points excluded). Solves via Gauss-Jordan elimination with partial pivoting. Returns `{ teamId: opr }` map rounded to 1 decimal. Teams with insufficient data return 0.
@@ -466,11 +524,29 @@ Clears existing `bracket_matches` and inserts pre-seeded double-elimination brac
 
 Standard seedings: 1v8, 4v5, 2v7, 3v6 for 8-alliance.
 
+#### `getAllianceRoster(db, allianceNumber) -> Object|null`
+Resolves an alliance number to its captain/partner team ids and numbers via `alliance_selections` (joined with `teams`). Returns `null` if the alliance has no selection saved yet.
+
+#### `formatAllianceLabel(allianceNumber, roster) -> string|null`
+Formats a display label for an alliance, e.g. `"A3 (500, 600)"` if a roster is known, or `"Alliance 3"` if not. Returns `null` if `allianceNumber` is `null` (slot not yet filled).
+
 #### `getBracket(db) -> Object[]`
-Returns all `bracket_matches` rows joined with match state, ordered by ID.
+Returns all `bracket_matches` rows (ordered by `bm.id`, which already matches the chronological round sequence each `bracketN()` slot list was built in — callers should preserve this order rather than re-sorting by round-name text, since names like `WB-Final`/`LB-SF`/`Grand-Final` have no digits to sort by) joined with match state. Each row includes both the raw snake_case fields (`red_alliance`, `blue_alliance`, `winner_alliance`, `bracket_round` — used by the admin bracket-management UI and `public.html`) and display-ready camelCase fields (`redAlliance`, `blueAlliance`, `matchNumber`, `redScore`, `blueScore`, `winner` — used by `bracket.html`), the latter built from `getAllianceRoster`/`formatAllianceLabel` and `getFullScore`.
 
 #### `advanceBracket(db, bracketMatchId, winnerAlliance) -> void`
-Records the winner of a bracket match.
+Records the winner of a bracket match (`winner_alliance` column only). **Does not auto-advance** the winner/loser into the next round's slot — see `POST /api/bracket/matches/:id/assign` below, which the admin "Bracket Matches" UI uses to route a recorded winner/loser into the next round's red/blue slot. This is deliberate: the exact winners/losers-bracket topology differs across 4/6/8-alliance formats, and is guided by the admin (following the printed bracket) rather than a hard-coded graph, to avoid silently mis-routing a live elimination bracket.
+
+---
+
+### `session-store.js` — Persistent Login Sessions
+
+#### `class SqliteSessionStore extends express-session.Store`
+Backs `express-session` with the `sessions` table instead of the default in-memory store, so logged-in PIN sessions survive a server restart (not just page refreshes/backgrounding, which the cookie's `maxAge` + `rolling` already handle). Expired rows are swept on startup.
+
+- `get(sid, cb)` — loads and JSON-parses the session, treating expired rows as missing.
+- `set(sid, sess, cb)` — upserts the session row, deriving `expires` from `sess.cookie.expires`.
+- `destroy(sid, cb)` — deletes the row (used on logout).
+- `touch(sid, sess, cb)` — same as `set`, used by `rolling: true` to extend expiry on activity.
 
 ---
 
@@ -515,7 +591,7 @@ Roles: `red`, `blue`, `ref`, `headref`, `control`, `queue`. The `headref` role a
 |--------|------|------|----------|
 | GET | `/api/matches/:id/scores` | — | `{ red: ScoreObj, blue: ScoreObj }` |
 | GET | `/api/matches/:id/penalties` | — | `Penalty[]` |
-| POST | `/api/matches/:id/commit` | — | `{ ok, rankings }` |
+| POST | `/api/matches/:id/commit` | — | `{ ok, rankings }` — if this match is linked to a `bracket_matches` row (a playoff match), also auto-records the bracket winner (`recordBracketWinnerIfLinked`, comparing `getFullScore` totals; ties are left unrecorded for manual resolution via `/winner`) and broadcasts `bracket_update` |
 | POST | `/api/matches/:id/override` | `{ alliance, field, value, changedBy }` | `{ ok }` or 400 |
 | POST | `/api/matches/:id/replay` | — | `{ ok }` |
 | GET | `/api/matches/:id/audit` | — | `AuditEntry[]` |
@@ -541,16 +617,19 @@ The `value` field is a number for all numeric fields, or a JSON array of team nu
 |--------|------|----------|
 | GET | `/api/rankings` | `Ranking[]` (sorted) |
 | GET | `/api/queue` | `{ onField, queued, upcoming }` |
+| GET | `/api/network-info` | `{ port, urls: string[] }` — this machine's LAN IPv4 addresses (from `os.networkInterfaces()`), formatted as full `http://ip:port` URLs. Backs the "Access" tab's QR code in `admin.html`; empty `urls` means no non-internal IPv4 interface was found (e.g. offline machine). |
 
 ### Bracket & Alliances
 
 | Method | Path | Body | Response |
 |--------|------|------|----------|
-| GET | `/api/bracket` | — | `BracketMatch[]` |
+| GET | `/api/bracket` | — | `BracketMatch[]` (see `getBracket` — enriched with resolved alliance rosters/labels and scores) |
 | POST | `/api/bracket/init` | — | `{ ok, allianceCount }` |
-| POST | `/api/bracket/matches/:id/winner` | `{ winnerAlliance }` | `{ ok }` |
+| POST | `/api/bracket/matches/:id/winner` | `{ winnerAlliance }` | `{ ok }` — manual winner fallback for a tied/edge-case match; broadcasts `bracket_update` |
+| POST | `/api/bracket/matches/:id/assign` | `{ side: 'red'\|'blue', allianceNumber }` | `{ ok }` — sets that bracket slot's red/blue alliance (used to route a recorded winner/loser into the next round); broadcasts `bracket_update` |
+| POST | `/api/bracket/matches/:id/create-match` | — | `{ ok, matchId }` — creates a playoff `matches` row (phase `'playoffs'`) for a bracket slot once both red/blue alliances are assigned; idempotent (returns the existing `match_id` if already linked); resolves team ids via `getAllianceRoster`; match number is `MAX(match_number WHERE phase='playoffs') + 1`; broadcasts `bracket_update` and `queue_update` so the new match appears in `control.html`'s pipeline like any other match |
 | GET | `/api/alliances` | — | Alliance rows with team details |
-| POST | `/api/alliances` | `{ alliance_number, captain_team, partner_team }` | `{ ok }` |
+| POST | `/api/alliances` | `{ alliance_number, captainNumber, partnerNumber }` | `{ ok }` — `captainNumber`/`partnerNumber` are team **numbers** (not internal ids); resolved to `teams.id` server-side and upserted via `ON CONFLICT(alliance_number)` |
 
 ### Timer Control
 
@@ -562,6 +641,27 @@ The `value` field is a number for all numeric fields, or a JSON array of team nu
 | POST | `/api/timer/abort` | `{ ok }` |
 | POST | `/api/timer/advance` | Timer state |
 | GET | `/api/timer` | Timer state |
+
+### Notes
+
+| Method | Path | Body / Query | Response |
+|--------|------|------|----------|
+| GET | `/api/notes` | `?team=<number>` or `?match=<match_number>` (optional filters) | `Note[]`, newest first, each joined with `match_number`/`phase` |
+| POST | `/api/notes` | `{ matchId, alliance?, teamNumber?, note, author? }` | `{ ok, note }` — broadcasts `note_added` |
+| PUT | `/api/notes/:id` | `{ note?, alliance?, teamNumber? }` | `{ ok, note }` — broadcasts `note_updated` |
+| DELETE | `/api/notes/:id` | — | `{ ok }` — broadcasts `note_removed` |
+
+`alliance`/`teamNumber` are omitted (null) for a general, non-team-tagged note.
+
+### RP Overrides
+
+| Method | Path | Body | Response |
+|--------|------|------|----------|
+| GET | `/api/matches/:id/rp-overrides` | — | `{ red: {...}, blue: {...} }`, each keyed by category |
+| PUT | `/api/matches/:id/rp-overrides` | `{ alliance, category, mode, value? }` | `{ ok, overrides }` — broadcasts `rp_override_changed` and re-broadcasts `score_update` |
+| DELETE | `/api/matches/:id/rp-overrides/:alliance/:category` | — | `{ ok, overrides }` — broadcasts `rp_override_changed` and re-broadcasts `score_update` |
+
+`category` is one of `win`/`park`/`pattern`/`ball`. `mode` is one of `grant`/`exclude`/`override`; `value` is required (and only used) when `mode='override'`.
 
 ### Admin & Export
 
@@ -585,13 +685,18 @@ The `value` field is a number for all numeric fields, or a JSON array of team nu
 | `match_start` | `TimerState` | Timer started |
 | `match_paused` | `TimerState` | Timer paused |
 | `match_resumed` | `TimerState` | Timer resumed |
-| `match_end` | `{ matchId, state }` | All periods complete |
+| `match_end` | `{ matchId, state }` | All periods complete, or the match was force-ended early (`timer.forceEnd()`) because a team received a red card |
 | `match_abort` | `{ matchId }` | Timer aborted |
 | `match_loaded` | `{ matchId, period, timeRemaining }` | Match loaded into timer |
 | `match_state_change` | `{ matchId, state, match }` | Match state updated via API |
 | `score_update` | `{ matchId, red, blue, redRP, blueRP }` | Any score change |
 | `scores_reveal` | Full results payload (scores, category breakdown, RPs, provisional rank movement) | Controller clicks "Show Scores on Display" |
 | `penalty_added` | `{ matchId, penalty, all }` | Penalty recorded |
+| `penalty_removed` | `{ matchId, removedId, all }` | Penalty removed |
+| `note_added` | Note row (with `match_number`, `phase` joined in) | Note created via `POST /api/notes` |
+| `note_updated` | Note row | Note edited via `PUT /api/notes/:id` |
+| `note_removed` | `{ id }` | Note deleted via `DELETE /api/notes/:id` |
+| `rp_override_changed` | `{ matchId, overrides: { red, blue } }` | RP override set or cleared |
 | `motif_update` | `{ matchId, motif }` | Motif set/randomized |
 | `match_replay` | `{ matchId }` | Match reset for replay |
 | `rankings_update` | `Ranking[]` | After score commit |
@@ -603,15 +708,16 @@ The `value` field is a number for all numeric fields, or a JSON array of team nu
 
 | Event | Payload | Description |
 |-------|---------|-------------|
-| `score_increment` | `{ matchId, alliance, field }` | +1 to a score field (validates period type) |
-| `score_decrement` | `{ matchId, alliance, field }` | -1 to a score field (min 0, blocked during TRANSITION/BUZZER) |
+| `score_increment` | `{ matchId, alliance, field }` | +1 to a score field. Classified/Overflow (`auto_classified`, `auto_overflow`, `teleop_classified`, `teleop_overflow`) work in any period — including TRANSITION/BUZZER — as long as the match is running or in post-match review; other fields still validate period type |
+| `score_decrement` | `{ matchId, alliance, field }` | -1 to a score field (min 0). Same always-on behavior as `score_increment` for Classified/Overflow |
 | `score_set` | `{ matchId, alliance, field, value }` | Set boolean field (auto_leave_r1/r2, during AUTO/TRANSITION) |
 | `pattern_ball` | `{ matchId, alliance, ballIdx, selected }` | Toggle pattern ball (index 0-8, TRANSITION only) |
-| `park_update` | `{ matchId, alliance, robot, status }` | Set park status (none/partial/full, ENDGAME only) |
-| `penalty` | `{ matchId, alliance, teamNumber, type }` | Record penalty (minor/major/yellow/red) |
-| `add_yellow_card` | `{ matchId, alliance, teamNumber }` | Add yellow card |
-| `add_red_card` | `{ matchId, alliance, teamNumber }` | Add red card |
-| `remove_card` | `{ matchId, alliance, teamNumber, cardType }` | Remove a card |
+| `park_update` | `{ matchId, alliance, robot, status }` | Set park status (none/partial/full) for the current endgame cycle (`timer.endgameCycle`). Accepted during TELEOP, ENDGAME, or BUZZER (or after match end, for review corrections) — so a park call can still be entered/corrected in the TELEOP period that follows a BUZZER, right up until the next ENDGAME starts a new cycle. Not gated on pause/running state either (a paused timer used to silently block Park View taps; the server still enforces valid game periods) |
+| `penalty` | `{ matchId, alliance, teamNumber, type }` | Record penalty (minor/major/yellow/red). For yellow/red, also syncs `match_scores.yellow_cards`/`red_cards` for that team (via `addCardToMatchScores`) — this is what `isAllianceRedCarded`/RP-DQ logic actually reads. Per the SEC Game Manual, any red card force-ends the match immediately (`timer.forceEnd()`) and the opponent is auto-awarded every RP category. |
+| `remove_penalty` | `{ matchId, alliance, type, teamNumber }` | Remove the most recent matching penalty; `teamNumber` targets a specific team's card (yellow/red), omitted for fouls. For yellow/red, also removes that team from `match_scores.yellow_cards`/`red_cards` (via `removeCardFromMatchScores`). Does not un-end an already force-ended match. |
+| `add_yellow_card` | `{ matchId, alliance, teamNumber }` | Legacy direct-card event (current UI issues cards via `penalty` above) — adds yellow card to `match_scores` |
+| `add_red_card` | `{ matchId, alliance, teamNumber }` | Legacy direct-card event — adds red card to `match_scores`; also triggers a full-alliance-DQ force-end check like `penalty` does |
+| `remove_card` | `{ matchId, alliance, teamNumber, cardType }` | Legacy direct-card event — removes a card from `match_scores` |
 | `timer_start` | — | Start timer |
 | `timer_pause` | — | Pause timer |
 | `timer_resume` | — | Resume timer |
@@ -651,16 +757,18 @@ Enriches a match row with team details (`red1_team`, `red2_team`, `blue1_team`, 
 1. **Create teams** via admin panel or CSV import
 2. **Generate schedule** — creates qualification matches with balanced alliances
 3. **Queue matches** — advance through UPCOMING -> QUEUED -> ON_FIELD states
-4. **Load match** into timer — creates score rows, sets motif
+4. **Load match** into timer — creates score rows
 5. **Randomize motif** — assigns GPP/PGP/PPG pattern
-6. **Start timer** — begins AUTO period, scorers can input scores
+5. **Start timer** — begins AUTO period, scorers can input scores
 7. **Score in real-time** — scorers increment/decrement fields, referees log fouls
 8. **Timer progresses** — AUTO -> TRANSITION -> (TELEOP -> ENDGAME -> BUZZER) x5
-9. **Match ends** — timer completes all periods; display shows "UNDER REVIEW" banner with frozen scores; scorer and referee pages stay fully editable so corrections can be made
+9. **Match ends** — timer completes all periods (or ends early — see below); display shows "UNDER REVIEW" banner with frozen scores; scorer and referee pages stay fully editable so corrections can be made
 10. **Review phase** — refs and scorers may still adjust scores, fouls, and cards; display does not update
 11. **Controller reveals scores** — clicks "Show Scores on Display" in the Post-Match card; display plays a pyramid winner animation (~4.4 s) then transitions to the broadcast-style Match Results screen
 12. **Head referee commits** — finalizes scores, updates official rankings; results screen rank pills refresh live
-13. **Playoffs** — alliance selection, bracket initialization, playoff matches
+13. **Playoffs** — alliance selection (admin's Playoffs tab, `POST /api/alliances`), bracket initialization (`POST /api/bracket/init`), then per bracket slot: assign red/blue alliances (`.../assign`) once both are known (either seeded or a routed prior winner/loser), create the playoff match (`.../create-match`, which drops it into the normal match pipeline — queue/load/score/commit like any qualification match), and on commit the winner is automatically recorded onto the bracket slot and can be manually routed into the next round's slot via `.../assign` again. Bracket auto-advancement graphs are **not** hard-coded for 6/8-alliance formats — the admin routes winners/losers manually via the "Winner of X"/"Loser of X" dropdown options (see `admin.html`'s Bracket Matches UI above), since the exact topology varies and a wrong hard-coded graph risks silently mis-routing a live elimination bracket.
+
+**Early match end (red card):** per the SEC Game Manual, if any team receives a red card mid-match, the match ends immediately (`timer.forceEnd()`) the same way a normal period runout would — it does not discard state like Abort does. The carded alliance's RP is entirely zeroed; the opposing alliance automatically receives the maximum of every RP category (Win/Movement/Pattern/Goal) regardless of the raw score comparison. See `isAllianceRedCarded` in `db.js` and `computeRpBreakdown` in `scoring.js`.
 
 ---
 
@@ -695,11 +803,15 @@ Match pipeline showing up to 5 non-completed matches with state badges and actio
 ### `red.html` / `blue.html` — Alliance Scorers
 Full-screen touch-optimized tablet interface. Context-sensitive scoring controls based on current period: AUTO (Classified, Overflow, Leave Zone toggles), TRANSITION (9-ball pattern grid), TELEOP (Classified, Overflow, Balls), ENDGAME (Park status per robot), BUZZER (wait overlay). Score cards use `min-height: var(--tap)` (48 px) to ensure reliable tap targets under pressure. Timer and scores use `font-family: var(--font-display)` with `clamp()` sizing for legibility at all viewport widths. Alliance-colored headers use a dark gradient with `env(safe-area-inset-top)` padding for notch-safe layout on tablets. After match end the page enters **review mode**: a yellow REVIEW badge appears and scoring stays fully editable (server accepts corrections) until the controller reveals the scores, at which point the "Match Over" overlay locks the page.
 
-### `ref.html` / `ref-blue.html` — Field Referees
-Two large solid-filled foul buttons: Minor Foul (yellow fill, `var(--yellow)`) and Major Foul (red fill, `var(--red)`). Solid fills replace the previous outlined style so buttons are unambiguous under arena lighting. Shows compact timer and both alliance scores in the header. Foul buttons have `min-height: 110px` and use `var(--font-display)` for maximum legibility on handheld devices. Timer in header uses `clamp()` for fluid sizing. Alliance-specific gradient headers with `env(safe-area-inset-top)` for notch safety. During post-match review a REVIEW badge shows and foul buttons remain active; they disable when scores are revealed.
+### `referee.html` — Field Referee
+Single field-referee view covering both alliances (replaces the old separate Red/Blue field referee pages). Same penalty grid as `headref.html` — Minor Foul, Major Foul, Yellow Card, Red Card per alliance, each paired 50/50 with a "−" button to remove the most recent matching entry (cards reopen the team picker in "remove" mode so a specific team's card can be revoked). Team picker modal for cards. Penalty log table (Time, Logged, Type, Team, Alliance — "Logged" shows the local wall-clock time-of-day the penalty was recorded, alongside the existing in-match elapsed time), no post-match actions (those stay head-referee-only). At viewports ≥ 900 px the layout switches to a 2-column grid: penalty buttons on the left, penalty log on the right. Logs in under the `ref` PIN role.
 
 ### `headref.html` — Head Referee
-Full penalty grid with both alliances side by side. Minor Foul, Major Foul, Yellow Card, Red Card per alliance. Team picker modal for cards. Penalty log table. Post-match: Commit Scores and Mark for Replay. At viewports ≥ 900 px (tablet landscape and desktop), the layout switches to a 2-column grid: penalty buttons on the left spanning both rows, penalty log and post-match actions stacked on the right. Penalty buttons use `min-height: 68px` and display font for fast, accurate tapping. Safe-area insets applied at the bottom for tablet home-bar clearance. During post-match review a REVIEW badge shows and all penalty/card buttons remain active until scores are revealed.
+Full penalty grid with both alliances side by side. Minor Foul, Major Foul, Yellow Card, Red Card per alliance. Team picker modal for cards. Penalty log table (Time, Logged, Type, Team, Alliance — "Logged" shows the local wall-clock time-of-day the penalty was recorded, alongside the existing in-match elapsed time). Post-match: Commit Scores and Mark for Replay. At viewports ≥ 900 px (tablet landscape and desktop), the layout switches to a 2-column grid: penalty buttons on the left spanning both rows, penalty log and post-match actions stacked on the right. Penalty buttons use `min-height: 68px` and display font for fast, accurate tapping. Safe-area insets applied at the bottom for tablet home-bar clearance. During post-match review a REVIEW badge shows and all penalty/card buttons remain active until scores are revealed.
+
+A **Penalties / Notes / RP Violations** tab bar switches the whole view between the penalty grid, a Notes panel, and an RP Violations panel (no page navigation, socket connection stays alive). The Notes panel has: an Add Note form showing the currently-loaded match's teams, a team picker (General + one button per team on each alliance) to tag the note, a text area, and an Add button (disabled until a match is loaded); a search box filtering by team number or match number; and an **All Notes** browser that lists every match (Q1, Q2, … / P1, P2, …) with its note count — tapping a match drills into a detail view showing only that match's notes (newest first) with inline Edit/Delete and a "← All matches" back button. **The match detail view also has its own mini add-note form** (team picker + text area, scoped to that match's own teams), so the head referee can add a note to a prior match or a team that played in it, not just the currently active match. Notes are shared in real time with `admin.html`'s Notes tab and any other open Head Referee tablet via `note_added`/`note_updated`/`note_removed` socket events. See the `notes` table and `/api/notes` endpoints above.
+
+**RP Violations tab:** shows all four RP categories (Win/Loss, Park, Pattern, Ball) for both alliances against the currently-loaded match, each with its live-calculated current value and three actions — **Grant** (forces the category to its max), **Exclude** (forces it to 0 for the rest of the match, can't be earned back), and **Override** (opens an inline numeric input to force an exact value, taking precedence over everything, including a red-card DQ). An active override shows a colored badge (green GRANT / red EXCLUDE / yellow OVERRIDE: n) and a Clear button to revert to normal auto-calculation. Changes take effect immediately in the live score (`score_update`) and are synced across every open Head Referee tablet via `rp_override_changed`. See the `rp_overrides` table, `/api/matches/:id/rp-overrides` endpoints, and `scoring.js`'s `computeRpBreakdown()` above.
 
 ### `queue.html` — Queue Display
 Large-font display for queueing area. Three sections: On Field Now, Report to Queue Now (pulsing border), Upcoming (next 2 matches). Real-time Socket.io updates.
@@ -711,7 +823,13 @@ Mobile-first bottom-tab SPA. Three tabs: **Rankings** (default) shows a 9-column
 Detailed rankings with expandable per-match RP breakdown. Top 3 with gold/silver/bronze coloring. CSV export button. Live updates.
 
 ### `bracket.html` — Playoff Bracket
-Horizontal scrolling bracket grouped by round. Match cards show alliance numbers, scores, winner badge. Live updates.
+Horizontal scrolling bracket grouped by round, in chronological slot order (rounds appear in first-seen order from `getBracket()`'s row order, not re-sorted by round-name text — round labels like `WB-Final`/`Grand-Final` have no digits to sort by). Match cards show resolved alliance labels (e.g. `A3 (500, 600)`) once a roster is known, scores, and a winner badge. Live updates via `bracket_update`.
 
 ### `admin.html` — Admin Panel
-8-tab interface: Teams (add/import/delete), Scoring Values (12 point values), Ranking Points (RP thresholds), Periods (CRUD with reorder), Schedule (generate/export), PINs (edit all credentials), Playoffs (bracket init, alliance selection), Reset (full wipe with confirmation).
+10-tab interface: Teams (add/import/delete), Scoring Values (12 point values), Ranking Points (RP thresholds), Periods (CRUD with reorder), Schedule (generate/export), Matches (score/penalty overrides), PINs (edit all credentials), Playoffs, Notes, Access, Reset (full wipe with confirmation).
+
+**Access tab:** a "Scan to Join" QR code, generated client-side with the same `/js/qrcode.js` library `display.html` uses (no external service — works fully offline on the local network). Fetches `GET /api/network-info` and encodes the first detected LAN URL, so refs/organizers can scan it with a phone to land on `/` and pick their role. Falls back to `location.origin` if no LAN interface is detected, and lists every detected URL as text below the code.
+
+**Playoffs tab:** Alliance Selection — one row per alliance (row count follows `getAllianceCount(teamCount)`, refreshed whenever team data loads), each with captain/partner team-number inputs saved via `POST /api/alliances`. **Bracket Matches** — one row per `bracket_matches` slot, showing its round/slot label; red/blue `<select>` dropdowns offer the base seed numbers plus a "Winner of X" / "Loser of X" option for every bracket match that already has a recorded winner (so a slot can be filled without the admin needing to know the official topology by heart) — selecting one calls `POST /api/bracket/matches/:id/assign` and then locks (the select is disabled once the slot's match has been created). Once both sides are assigned, a **Create Match** button calls `POST /api/bracket/matches/:id/create-match`, after which the row shows the match info and a winner badge once committed (or, if the match is `COMPLETED` with no recorded winner — a tie — manual **Set RED/BLUE winner** buttons calling `/winner` as a fallback). Live updates via `bracket_update`.
+
+**Notes tab:** full add/search/edit/delete access to the same notes system as `headref.html`'s Notes tab (same match-list-then-detail browser), kept live-synced via Socket.io. Unlike the head-ref view (which always targets the currently-loaded match), admin has a match picker dropdown (any qualification/playoff match) since there's no "current match" context here — selecting a match repopulates the team picker (General + that match's 4 teams) for the Add Note form.

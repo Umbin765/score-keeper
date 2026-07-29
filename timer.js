@@ -91,6 +91,22 @@ class MatchTimer {
     this.io.emit('match_abort', { matchId: mid });
   }
 
+  /**
+   * Force the match to end immediately, e.g. a full-alliance DQ (both teams
+   * red-carded). Unlike abort(), this ends the match the same way a normal
+   * period runout would — matchEnded=true, match_end emitted, scores stand
+   * as-is for review/commit. Does not discard state like abort() does.
+   */
+  forceEnd() {
+    if (!this.matchId || this.matchEnded) return false;
+    if (this._interval) {
+      clearInterval(this._interval);
+      this._interval = null;
+    }
+    this._endMatch();
+    return true;
+  }
+
   /** Manually advance to the next period (override). */
   manualAdvance() {
     if (!this.matchId || this.matchEnded) return false;

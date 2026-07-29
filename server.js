@@ -7,11 +7,12 @@ const session = require('express-session');
 const cookieParser = require('cookie-parser');
 const path = require('path');
 
+const SqliteSessionStore = require('./session-store');
 const { getDb, getSettingsMap, getPointValues, expandPeriods, ensureMatchScores, getFullScore } = require('./db');
 const { MatchTimer } = require('./timer');
-const { calculateScore, computeLiveRP, updateRankings } = require('./scoring');
+const { calculateScore, computeLiveRP, getRpOverrides, updateRankings } = require('./scoring');
 const { generateSchedule } = require('./scheduler');
-const { getAllianceCount, initBracket, getBracket, advanceBracket } = require('./bracket');
+const { getAllianceCount, initBracket, getBracket, advanceBracket, getAllianceRoster } = require('./bracket');
 
 // ─── App setup ───────────────────────────────────────────────────────────────
 
@@ -28,11 +29,11 @@ timer.onPeriodChange = function(state) {
   if (!timer.matchId || !state.period) return;
   const { type, cycle } = state.period;
   if (type === 'AUTO' && cycle > 1) {
-    db.prepare("UPDATE match_scores SET pattern_balls='000000000' WHERE match_id=?").run(timer.matchId);
+    db.prepare("UPDATE match_scores SET pattern_balls='nnnnnnnnn' WHERE match_id=?").run(timer.matchId);
     broadcastScores(timer.matchId);
   }
   if (type === 'TELEOP' && cycle > 1) {
-    db.prepare("UPDATE match_scores SET teleop_pattern_balls='000000000' WHERE match_id=?").run(timer.matchId);
+    db.prepare("UPDATE match_scores SET teleop_pattern_balls='nnnnnnnnn' WHERE match_id=?").run(timer.matchId);
     broadcastScores(timer.matchId);
   }
 };
@@ -40,10 +41,12 @@ timer.onPeriodChange = function(state) {
 app.use(express.json());
 app.use(cookieParser());
 app.use(session({
+  store: new SqliteSessionStore(), // survives server restarts, not just page refreshes
   secret: 'scorekeeper-secret-2024',
   resave: false,
   saveUninitialized: false,
-  cookie: { maxAge: null }, // session cookie — clears on browser close
+  rolling: true, // refresh expiry on every request so an active tab never times out mid-event
+  cookie: { maxAge: 12 * 60 * 60 * 1000 }, // 12h — survives refreshes/backgrounding for a full event day
 }));
 
 // Serve static assets (CSS, JS, sounds)
@@ -74,8 +77,7 @@ app.get('/bracket',    servePage('bracket.html'));
 app.get('/control',    servePage('control.html'));
 app.get('/red',        servePage('red.html'));
 app.get('/blue',       servePage('blue.html'));
-app.get('/ref-red',    servePage('ref.html'));
-app.get('/ref-blue',   servePage('ref-blue.html'));
+app.get('/referee',    servePage('referee.html'));
 app.get('/headref',    servePage('headref.html'));
 app.get('/queue',      servePage('queue.html'));
 
@@ -271,7 +273,8 @@ app.post('/api/matches/:id/load', (req, res) => {
   const periods = expandPeriods(periodRows);
   timer.load(matchId, periods);
 
-  // Broadcast current motif so display and other clients sync immediately
+  // Broadcast to all clients that a new match is now loaded
+  io.emit('match_loaded', { matchId, match: matchWithTeams(match) });
   io.emit('motif_update', { matchId, motif: match.motif || null });
 
   res.json({ ok: true, periods });
@@ -318,13 +321,195 @@ app.get('/api/matches/:id/scores', (req, res) => {
   res.json({ red, blue, redRP, blueRP });
 });
 
+// ── Head Referee RP Overrides ─────────────────────────────────────────────────
+
+const RP_CATEGORIES = ['win', 'park', 'pattern', 'ball'];
+
+app.get('/api/matches/:id/rp-overrides', (req, res) => {
+  const matchId = Number(req.params.id);
+  const red = getRpOverrides(db, matchId, 'red');
+  const blue = getRpOverrides(db, matchId, 'blue');
+  res.json({ red, blue });
+});
+
+app.put('/api/matches/:id/rp-overrides', (req, res) => {
+  const matchId = Number(req.params.id);
+  const { alliance, category, mode, value } = req.body;
+  if (!['red', 'blue'].includes(alliance)) return res.status(400).json({ error: 'Invalid alliance' });
+  if (!RP_CATEGORIES.includes(category)) return res.status(400).json({ error: 'Invalid category' });
+  if (!['grant', 'exclude', 'override'].includes(mode)) return res.status(400).json({ error: 'Invalid mode' });
+  if (mode === 'override' && (value === undefined || value === null || isNaN(Number(value)))) {
+    return res.status(400).json({ error: 'Override requires a numeric value' });
+  }
+
+  db.prepare(`
+    INSERT INTO rp_overrides(match_id, alliance, category, mode, value)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(match_id, alliance, category) DO UPDATE SET
+      mode=excluded.mode, value=excluded.value, created_at=unixepoch()
+  `).run(matchId, alliance, category, mode, mode === 'override' ? Number(value) : null);
+
+  const overrides = { red: getRpOverrides(db, matchId, 'red'), blue: getRpOverrides(db, matchId, 'blue') };
+  io.emit('rp_override_changed', { matchId, overrides });
+  broadcastScores(matchId);
+  res.json({ ok: true, overrides });
+});
+
+app.delete('/api/matches/:id/rp-overrides/:alliance/:category', (req, res) => {
+  const matchId = Number(req.params.id);
+  const { alliance, category } = req.params;
+  db.prepare('DELETE FROM rp_overrides WHERE match_id=? AND alliance=? AND category=?').run(matchId, alliance, category);
+
+  const overrides = { red: getRpOverrides(db, matchId, 'red'), blue: getRpOverrides(db, matchId, 'blue') };
+  io.emit('rp_override_changed', { matchId, overrides });
+  broadcastScores(matchId);
+  res.json({ ok: true, overrides });
+});
+
 app.get('/api/matches/:id/penalties', (req, res) => {
   const matchId = Number(req.params.id);
   const penalties = db.prepare('SELECT * FROM penalties WHERE match_id=? ORDER BY created_at').all(matchId);
   res.json(penalties);
 });
 
+app.post('/api/matches/:id/penalties', (req, res) => {
+  const matchId = Number(req.params.id);
+  const { alliance, type, team_number } = req.body;
+  if (!['red', 'blue'].includes(alliance)) return res.status(400).json({ error: 'Invalid alliance' });
+  if (!['minor', 'major'].includes(type)) return res.status(400).json({ error: 'Invalid type' });
+  db.prepare('INSERT INTO penalties(match_id, period_name, match_time, alliance, team_number, type) VALUES (?,?,?,?,?,?)')
+    .run(matchId, 'admin', 0, alliance, team_number || null, type);
+  broadcastScores(matchId);
+  const penalties = db.prepare('SELECT * FROM penalties WHERE match_id=? ORDER BY created_at').all(matchId);
+  res.json({ ok: true, penalties });
+});
+
+app.delete('/api/matches/:id/penalties/:penaltyId', (req, res) => {
+  const matchId = Number(req.params.id);
+  const penaltyId = Number(req.params.penaltyId);
+  db.prepare('DELETE FROM penalties WHERE id=? AND match_id=?').run(penaltyId, matchId);
+  broadcastScores(matchId);
+  const penalties = db.prepare('SELECT * FROM penalties WHERE match_id=? ORDER BY created_at').all(matchId);
+  res.json({ ok: true, penalties });
+});
+
+// ── Head Referee / Admin Notes ────────────────────────────────────────────────
+
+function noteWithMatchNumber(note) {
+  const match = db.prepare('SELECT match_number, phase FROM matches WHERE id=?').get(note.match_id);
+  return { ...note, match_number: match ? match.match_number : null, phase: match ? match.phase : null };
+}
+
+app.get('/api/notes', (req, res) => {
+  const { team, match } = req.query;
+  let notes;
+  if (team) {
+    notes = db.prepare('SELECT * FROM notes WHERE team_number=? ORDER BY created_at DESC').all(Number(team));
+  } else if (match) {
+    const m = db.prepare('SELECT id FROM matches WHERE match_number=?').get(Number(match));
+    notes = m ? db.prepare('SELECT * FROM notes WHERE match_id=? ORDER BY created_at DESC').all(m.id) : [];
+  } else {
+    notes = db.prepare('SELECT * FROM notes ORDER BY created_at DESC').all();
+  }
+  res.json(notes.map(noteWithMatchNumber));
+});
+
+app.post('/api/notes', (req, res) => {
+  const { matchId, alliance, teamNumber, note, author } = req.body;
+  if (!matchId) return res.status(400).json({ error: 'matchId required' });
+  if (!note || !note.trim()) return res.status(400).json({ error: 'note text required' });
+  if (alliance && !['red', 'blue'].includes(alliance)) return res.status(400).json({ error: 'Invalid alliance' });
+
+  const info = db.prepare(`
+    INSERT INTO notes(match_id, alliance, team_number, note, author)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(matchId, alliance || null, teamNumber || null, note.trim(), author === 'admin' ? 'admin' : 'headref');
+
+  const created = noteWithMatchNumber(db.prepare('SELECT * FROM notes WHERE id=?').get(info.lastInsertRowid));
+  io.emit('note_added', created);
+  res.json({ ok: true, note: created });
+});
+
+app.put('/api/notes/:id', (req, res) => {
+  const id = Number(req.params.id);
+  const { note, alliance, teamNumber } = req.body;
+  const existing = db.prepare('SELECT * FROM notes WHERE id=?').get(id);
+  if (!existing) return res.status(404).json({ error: 'Note not found' });
+  if (alliance && !['red', 'blue'].includes(alliance)) return res.status(400).json({ error: 'Invalid alliance' });
+
+  db.prepare(`
+    UPDATE notes SET
+      note=?,
+      alliance=?,
+      team_number=?,
+      updated_at=unixepoch()
+    WHERE id=?
+  `).run(
+    note != null ? note.trim() : existing.note,
+    alliance !== undefined ? (alliance || null) : existing.alliance,
+    teamNumber !== undefined ? (teamNumber || null) : existing.team_number,
+    id
+  );
+
+  const updated = noteWithMatchNumber(db.prepare('SELECT * FROM notes WHERE id=?').get(id));
+  io.emit('note_updated', updated);
+  res.json({ ok: true, note: updated });
+});
+
+app.delete('/api/notes/:id', (req, res) => {
+  const id = Number(req.params.id);
+  db.prepare('DELETE FROM notes WHERE id=?').run(id);
+  io.emit('note_removed', { id });
+  res.json({ ok: true });
+});
+
 // Commit final scores → update rankings
+// ─── Push public snapshot to Vercel ──────────────────────────────────────────
+
+function pushPublicData() {
+  const vercelUrl = process.env.PUBLIC_VERCEL_URL;
+  const secret    = process.env.SYNC_SECRET;
+  if (!vercelUrl || !secret) return; // not configured, skip silently
+
+  const matches   = db.prepare('SELECT * FROM matches ORDER BY match_number').all().map(matchWithTeams);
+  const completed = db.prepare("SELECT id FROM matches WHERE state='COMPLETED'").all();
+  const results   = {};
+  for (const m of completed) {
+    const red  = getFullScore(db, m.id, 'red');
+    const blue = getFullScore(db, m.id, 'blue');
+    results[m.id] = { red: red.total, blue: blue.total };
+  }
+  const rankings = updateRankings(db);
+  const bracket  = getBracket(db);
+
+  const body = JSON.stringify({ rankings, matches, results, bracket, updatedAt: new Date().toISOString() });
+
+  fetch(vercelUrl + '/api/sync', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + secret },
+    body,
+  }).then(function (r) {
+    if (!r.ok) console.error('[public sync] HTTP', r.status);
+  }).catch(function (err) {
+    console.error('[public sync] failed:', err.message);
+  });
+}
+
+// If this match is linked to a bracket slot, record the winning alliance
+// (by score comparison) once it's committed. Ties are left unresolved for
+// the admin to set manually via POST /api/bracket/matches/:id/winner —
+// elimination matches aren't expected to tie under normal play.
+function recordBracketWinnerIfLinked(matchId) {
+  const slot = db.prepare('SELECT id, red_alliance, blue_alliance FROM bracket_matches WHERE match_id=?').get(matchId);
+  if (!slot) return;
+  const redTotal = getFullScore(db, matchId, 'red').total;
+  const blueTotal = getFullScore(db, matchId, 'blue').total;
+  if (redTotal === blueTotal) return;
+  const winnerAlliance = redTotal > blueTotal ? slot.red_alliance : slot.blue_alliance;
+  advanceBracket(db, slot.id, winnerAlliance);
+  io.emit('bracket_update', getBracket(db));
+}
+
 app.post('/api/matches/:id/commit', (req, res) => {
   const matchId = Number(req.params.id);
   db.prepare("UPDATE match_scores SET committed=1 WHERE match_id=?").run(matchId);
@@ -335,6 +520,9 @@ app.post('/api/matches/:id/commit', (req, res) => {
   io.emit('queue_update', getQueueState());
   io.emit('match_state_change', { matchId, state: 'COMPLETED' });
 
+  recordBracketWinnerIfLinked(matchId);
+  pushPublicData();
+
   res.json({ ok: true, rankings });
 });
 
@@ -344,7 +532,7 @@ app.post('/api/matches/:id/override', (req, res) => {
   const { alliance, field, value, changedBy } = req.body;
 
   const numericFields = ['auto_classified','auto_overflow','auto_leave','auto_leave_r1','auto_leave_r2','auto_pattern',
-    'teleop_classified','teleop_overflow','teleop_balls','teleop_pattern'];
+    'teleop_classified','teleop_overflow','teleop_pattern'];
   const cardFields = ['yellow_cards','red_cards'];
   if (!numericFields.includes(field) && !cardFields.includes(field)) {
     return res.status(400).json({ error: 'Unknown field' });
@@ -381,7 +569,7 @@ app.post('/api/matches/:id/override', (req, res) => {
 // Replay: reset scores for a match
 app.post('/api/matches/:id/replay', (req, res) => {
   const matchId = Number(req.params.id);
-  db.prepare("UPDATE match_scores SET auto_classified=0,auto_overflow=0,auto_leave=0,auto_leave_r1=0,auto_leave_r2=0,auto_pattern=0,pattern_balls='000000000',teleop_classified=0,teleop_overflow=0,teleop_balls=0,teleop_pattern=0,teleop_pattern_balls='000000000',yellow_cards=?,red_cards=?,committed=0 WHERE match_id=?")
+  db.prepare("UPDATE match_scores SET auto_classified=0,auto_overflow=0,auto_leave=0,auto_leave_r1=0,auto_leave_r2=0,auto_pattern=0,pattern_balls='nnnnnnnnn',teleop_classified=0,teleop_overflow=0,teleop_balls=0,teleop_pattern=0,teleop_pattern_balls='nnnnnnnnn',yellow_cards=?,red_cards=?,committed=0 WHERE match_id=?")
     .run('[]', '[]', matchId);
   db.prepare('DELETE FROM endgame_cycles WHERE match_id=?').run(matchId);
   db.prepare('DELETE FROM penalties WHERE match_id=?').run(matchId);
@@ -411,6 +599,18 @@ app.get('/api/matches/:id/results', (req, res) => {
   const results = buildResultsPayload(Number(req.params.id));
   if (!results) return res.status(404).json({ error: 'Match not found' });
   res.json(results);
+});
+
+// Bulk score totals for all completed matches (used by public view)
+app.get('/api/results', (_req, res) => {
+  const matches = db.prepare("SELECT id FROM matches WHERE state='COMPLETED'").all();
+  const out = {};
+  for (const m of matches) {
+    const red  = getFullScore(db, m.id, 'red');
+    const blue = getFullScore(db, m.id, 'blue');
+    out[m.id] = { red: red.total, blue: blue.total };
+  }
+  res.json(out);
 });
 
 // Audit log (head ref)
@@ -463,6 +663,20 @@ app.put('/api/periods', (req, res) => {
   res.json({ ok: true });
 });
 
+// ─── Network info API ─────────────────────────────────────────────────────────
+
+app.get('/api/network-info', (_req, res) => {
+  const os = require('os');
+  const nets = os.networkInterfaces();
+  const ips = [];
+  for (const iface of Object.values(nets)) {
+    for (const net of iface) {
+      if (net.family === 'IPv4' && !net.internal) ips.push(net.address);
+    }
+  }
+  res.json({ port: PORT, urls: ips.map((ip) => `http://${ip}:${PORT}`) });
+});
+
 // ─── Rankings API ─────────────────────────────────────────────────────────────
 
 app.get('/api/rankings', (_req, res) => {
@@ -508,6 +722,56 @@ app.post('/api/bracket/matches/:id/winner', (req, res) => {
   res.json({ ok: true });
 });
 
+// Manually route a recorded winner/loser (or a base seed) into a later
+// round's TBD slot. Used by the admin "Bracket Matches" UI since the exact
+// winners/losers topology differs by alliance count (4/6/8) and is guided by
+// the admin rather than auto-computed (see bracket.js's advanceBracket doc).
+app.post('/api/bracket/matches/:id/assign', (req, res) => {
+  const bracketMatchId = Number(req.params.id);
+  const { side, allianceNumber } = req.body;
+  if (!['red', 'blue'].includes(side)) return res.status(400).json({ error: 'side must be red or blue' });
+  const field = side === 'red' ? 'red_alliance' : 'blue_alliance';
+  db.prepare(`UPDATE bracket_matches SET ${field}=? WHERE id=?`).run(allianceNumber ?? null, bracketMatchId);
+  io.emit('bracket_update', getBracket(db));
+  res.json({ ok: true, bracket: getBracket(db) });
+});
+
+// Create the actual scoreable match for a bracket slot once both alliances
+// are known. Idempotent — if the slot already has a linked match, returns it
+// instead of creating a duplicate.
+app.post('/api/bracket/matches/:id/create-match', (req, res) => {
+  const bracketMatchId = Number(req.params.id);
+  const slot = db.prepare('SELECT * FROM bracket_matches WHERE id=?').get(bracketMatchId);
+  if (!slot) return res.status(404).json({ error: 'Bracket match not found' });
+  if (slot.match_id) {
+    return res.json({ ok: true, matchId: slot.match_id, alreadyExisted: true });
+  }
+  if (slot.red_alliance == null || slot.blue_alliance == null) {
+    return res.status(400).json({ error: 'Both red and blue alliances must be assigned first' });
+  }
+
+  const redRoster = getAllianceRoster(db, slot.red_alliance);
+  const blueRoster = getAllianceRoster(db, slot.blue_alliance);
+  if (!redRoster || !redRoster.captain_team) return res.status(400).json({ error: `Alliance ${slot.red_alliance} has no captain set` });
+  if (!blueRoster || !blueRoster.captain_team) return res.status(400).json({ error: `Alliance ${slot.blue_alliance} has no captain set` });
+
+  const next = db.prepare("SELECT MAX(match_number) as maxNum FROM matches WHERE phase='playoffs'").get();
+  const matchNumber = (next.maxNum || 0) + 1;
+
+  const info = db.prepare(`
+    INSERT INTO matches(match_number, phase, red1, red2, blue1, blue2, state)
+    VALUES (?, 'playoffs', ?, ?, ?, ?, 'UPCOMING')
+  `).run(matchNumber, redRoster.captain_team, redRoster.partner_team || null, blueRoster.captain_team, blueRoster.partner_team || null);
+
+  const matchId = info.lastInsertRowid;
+  ensureMatchScores(db, matchId);
+  db.prepare('UPDATE bracket_matches SET match_id=? WHERE id=?').run(matchId, bracketMatchId);
+
+  io.emit('bracket_update', getBracket(db));
+  io.emit('queue_update', getQueueState());
+  res.json({ ok: true, matchId, matchNumber });
+});
+
 // ─── Alliance selections API ──────────────────────────────────────────────────
 
 app.get('/api/alliances', (_req, res) => {
@@ -523,9 +787,27 @@ app.get('/api/alliances', (_req, res) => {
 });
 
 app.post('/api/alliances', (req, res) => {
-  const { alliance_number, captain_team, partner_team } = req.body;
-  db.prepare(`INSERT OR REPLACE INTO alliance_selections(alliance_number, captain_team, partner_team) VALUES (?,?,?)`)
-    .run(alliance_number, captain_team, partner_team || null);
+  const { alliance_number, captainNumber, partnerNumber } = req.body;
+  if (!alliance_number) return res.status(400).json({ error: 'alliance_number required' });
+  if (!captainNumber) return res.status(400).json({ error: 'captainNumber required' });
+
+  const captain = db.prepare('SELECT id FROM teams WHERE number=?').get(captainNumber);
+  if (!captain) return res.status(400).json({ error: 'Unknown captain team number' });
+
+  let partnerId = null;
+  if (partnerNumber) {
+    const partner = db.prepare('SELECT id FROM teams WHERE number=?').get(partnerNumber);
+    if (!partner) return res.status(400).json({ error: 'Unknown partner team number' });
+    partnerId = partner.id;
+  }
+
+  db.prepare(`
+    INSERT INTO alliance_selections(alliance_number, captain_team, partner_team)
+    VALUES (?, ?, ?)
+    ON CONFLICT(alliance_number) DO UPDATE SET captain_team=excluded.captain_team, partner_team=excluded.partner_team
+  `).run(alliance_number, captain.id, partnerId);
+
+  io.emit('bracket_update', getBracket(db));
   res.json({ ok: true });
 });
 
@@ -603,7 +885,6 @@ function buildResultsPayload(matchId) {
       leave:    p.auto_leave || 0,
       artifact: (p.auto_classified || 0) + (p.auto_overflow || 0) + (p.teleop_classified || 0) + (p.teleop_overflow || 0),
       pattern:  (p.auto_pattern || 0) + (p.teleop_pattern || 0),
-      balls:    p.teleop_balls || 0,
       base:     p.park || 0,
       foul:     p.penalties || 0,
     };
@@ -641,6 +922,28 @@ function buildResultsPayload(matchId) {
   };
 }
 
+// ── Card sync (match_scores.yellow_cards / red_cards) ─────────────────────────
+// Keeps the alliance-level card arrays (used for DQ/RP detection) in sync with
+// whichever team a card was issued to or rescinded from via the unified
+// 'penalty' / 'remove_penalty' events.
+
+function addCardToMatchScores(matchId, alliance, cardType, teamNumber) {
+  if (teamNumber == null) return;
+  const field = cardType === 'red' ? 'red_cards' : 'yellow_cards';
+  const row = db.prepare(`SELECT ${field} FROM match_scores WHERE match_id=? AND alliance=?`).get(matchId, alliance);
+  const cards = JSON.parse(row?.[field] || '[]');
+  if (!cards.includes(teamNumber)) cards.push(teamNumber);
+  db.prepare(`UPDATE match_scores SET ${field}=? WHERE match_id=? AND alliance=?`).run(JSON.stringify(cards), matchId, alliance);
+}
+
+function removeCardFromMatchScores(matchId, alliance, cardType, teamNumber) {
+  if (teamNumber == null) return;
+  const field = cardType === 'red' ? 'red_cards' : 'yellow_cards';
+  const row = db.prepare(`SELECT ${field} FROM match_scores WHERE match_id=? AND alliance=?`).get(matchId, alliance);
+  const cards = JSON.parse(row?.[field] || '[]').filter(n => n !== teamNumber);
+  db.prepare(`UPDATE match_scores SET ${field}=? WHERE match_id=? AND alliance=?`).run(JSON.stringify(cards), matchId, alliance);
+}
+
 function broadcastScores(matchId) {
   const red = getFullScore(db, matchId, 'red');
   const blue = getFullScore(db, matchId, 'blue');
@@ -676,21 +979,12 @@ io.on('connection', (socket) => {
     if (!timer.matchId || timer.matchId !== matchId) return;
     if (!['red', 'blue'].includes(alliance)) return;
 
-    const autoFields = ['auto_classified','auto_overflow','auto_pattern'];
-    const teleopFields = ['teleop_classified','teleop_overflow','teleop_balls'];
+    const scoreFields = ['auto_classified','auto_overflow','teleop_classified','teleop_overflow'];
+    if (!scoreFields.includes(field)) return;
 
-    if (timer.matchEnded) {
-      // Review phase: any score field may be corrected
-      if (![...autoFields, ...teleopFields].includes(field)) return;
-    } else {
-      if (!timer.running) return;
-      const period = timer.currentPeriod;
-      if (!period || period.type === 'BUZZER') return;
-      if (period.type === 'AUTO'        && !autoFields.includes(field)) return;
-      if (period.type === 'TRANSITION'  && field !== 'auto_pattern') return;
-      if (period.type === 'TELEOP'      && !teleopFields.includes(field)) return;
-      if (!['AUTO','TRANSITION','TELEOP','ENDGAME'].includes(period.type)) return;
-    }
+    // Classified/Overflow stay correctable through every period — including
+    // TRANSITION and BUZZER — and during post-match review.
+    if (!timer.matchEnded && !timer.running) return;
 
     db.prepare(`UPDATE match_scores SET ${field}=${field}+1 WHERE match_id=? AND alliance=?`).run(matchId, alliance);
     broadcastScores(matchId);
@@ -715,38 +1009,58 @@ io.on('connection', (socket) => {
     broadcastScores(matchId);
   });
 
-  // ── Pattern ball toggle ─────────────────────────────────────────────────
-  socket.on('pattern_ball', ({ matchId, alliance, ballIdx, selected }) => {
+  // ── Pattern ball selection ──────────────────────────────────────────────
+  // color: 'green' | 'purple' | 'none'
+  // Scoring: count positions where selected color matches the match motif (G/P repeating per gate).
+  function computePatternMatches(balls, motif) {
+    if (!motif) return 0;
+    let count = 0;
+    for (let i = 0; i < 9; i++) {
+      const sel = balls[i];
+      const expected = motif[i % 3]; // 'G' or 'P'
+      if ((sel === 'g' && expected === 'G') || (sel === 'p' && expected === 'P')) count++;
+    }
+    return count;
+  }
+
+  socket.on('pattern_ball', ({ matchId, alliance, ballIdx, color }) => {
     if (!timer.matchId || timer.matchId !== matchId) return;
     if (!timer.running && !timer.matchEnded) return;
     if (typeof ballIdx !== 'number' || ballIdx < 0 || ballIdx > 8) return;
     if (!['red', 'blue'].includes(alliance)) return;
+    if (!['green','purple','none'].includes(color)) return;
 
     const period = timer.currentPeriod;
     const grid = timer.matchEnded
-      ? 'teleop'                                          // review-phase edits target the teleop grid
-      : period && period.type === 'TRANSITION' ? 'auto'
+      ? 'teleop'
+      : period && ['AUTO','TRANSITION'].includes(period.type) ? 'auto'
       : period && ['TELEOP','ENDGAME','BUZZER'].includes(period.type) ? 'teleop'
       : null;
     if (!grid) return;
 
+    const colorChar = color === 'green' ? 'g' : color === 'purple' ? 'p' : 'n';
+    const matchRow = db.prepare('SELECT motif FROM matches WHERE id=?').get(matchId);
+    const motif = matchRow?.motif || null;
+
     if (grid === 'auto') {
-      const row = db.prepare('SELECT pattern_balls FROM match_scores WHERE match_id=? AND alliance=?').get(matchId, alliance);
-      const arr = (row?.pattern_balls || '000000000').split('');
-      arr[ballIdx] = selected ? '1' : '0';
+      const row = db.prepare('SELECT pattern_balls, auto_pattern FROM match_scores WHERE match_id=? AND alliance=?').get(matchId, alliance);
+      const prevGrid = row?.pattern_balls || 'nnnnnnnnn';
+      const base = (row?.auto_pattern || 0) - computePatternMatches(prevGrid.split(''), motif);
+      const arr = prevGrid.split('');
+      arr[ballIdx] = colorChar;
       const newBalls = arr.join('');
-      const count    = arr.filter(b => b === '1').length;
       db.prepare('UPDATE match_scores SET pattern_balls=?, auto_pattern=? WHERE match_id=? AND alliance=?')
-        .run(newBalls, count, matchId, alliance);
+        .run(newBalls, base + computePatternMatches(arr, motif), matchId, alliance);
       broadcastScores(matchId);
     } else {
-      const row = db.prepare('SELECT teleop_pattern_balls FROM match_scores WHERE match_id=? AND alliance=?').get(matchId, alliance);
-      const arr = (row?.teleop_pattern_balls || '000000000').split('');
-      arr[ballIdx] = selected ? '1' : '0';
+      const row = db.prepare('SELECT teleop_pattern_balls, teleop_pattern FROM match_scores WHERE match_id=? AND alliance=?').get(matchId, alliance);
+      const prevGrid = row?.teleop_pattern_balls || 'nnnnnnnnn';
+      const base = (row?.teleop_pattern || 0) - computePatternMatches(prevGrid.split(''), motif);
+      const arr = prevGrid.split('');
+      arr[ballIdx] = colorChar;
       const newBalls = arr.join('');
-      const count    = arr.filter(b => b === '1').length;
       db.prepare('UPDATE match_scores SET teleop_pattern_balls=?, teleop_pattern=? WHERE match_id=? AND alliance=?')
-        .run(newBalls, count, matchId, alliance);
+        .run(newBalls, base + computePatternMatches(arr, motif), matchId, alliance);
       broadcastScores(matchId);
     }
   });
@@ -755,13 +1069,13 @@ io.on('connection', (socket) => {
     if (!timer.matchId || timer.matchId !== matchId) return;
     if (!['red', 'blue'].includes(alliance)) return;
     // Whitelist before SQL interpolation (field is spliced into the query below)
-    const decFields = ['auto_classified','auto_overflow','auto_pattern',
-      'teleop_classified','teleop_overflow','teleop_balls'];
+    const decFields = ['auto_classified','auto_overflow',
+      'teleop_classified','teleop_overflow'];
     if (!decFields.includes(field)) return;
-    if (!timer.matchEnded) {
-      const period = timer.currentPeriod;
-      if (!period || ['TRANSITION','BUZZER'].includes(period.type)) return;
-    }
+
+    // Classified/Overflow stay correctable through every period — including
+    // TRANSITION and BUZZER — and during post-match review.
+    if (!timer.matchEnded && !timer.running) return;
 
     const cur = db.prepare(`SELECT ${field} FROM match_scores WHERE match_id=? AND alliance=?`).get(matchId, alliance);
     if (!cur || cur[field] <= 0) return;
@@ -776,7 +1090,9 @@ io.on('connection', (socket) => {
     if (!timer.matchId || timer.matchId !== matchId) return;
     if (!timer.matchEnded) {
       const period = timer.currentPeriod;
-      if (!period || !['ENDGAME', 'BUZZER'].includes(period.type)) return;
+      // Accepted through TELEOP too so a park call can still be entered/corrected
+      // in the following TELEOP, right up until the next ENDGAME starts a new cycle.
+      if (!period || !['TELEOP', 'ENDGAME', 'BUZZER'].includes(period.type)) return;
     }
 
     const cycle = timer.endgameCycle || 1;
@@ -801,49 +1117,64 @@ io.on('connection', (socket) => {
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(matchId, period?.name || '', matchTime, alliance, teamNumber || null, type);
 
+    if (type === 'yellow' || type === 'red') {
+      addCardToMatchScores(matchId, alliance, type, teamNumber);
+    }
+
     const penalties = db.prepare('SELECT * FROM penalties WHERE match_id=? ORDER BY created_at').all(matchId);
     io.emit('penalty_added', { matchId, penalty: penalties[penalties.length - 1], all: penalties });
 
     broadcastScores(matchId);
+
+    // Per the SEC Game Manual: any confirmed red card ends the match
+    // immediately — the opposing alliance is auto-awarded every RP category
+    // (see computeRpBreakdown).
+    if (type === 'red' && !timer.matchEnded) {
+      timer.forceEnd();
+    }
   });
 
-  socket.on('remove_penalty', ({ matchId, alliance, type }) => {
+  socket.on('remove_penalty', ({ matchId, alliance, type, teamNumber }) => {
     if (!timer.matchId || timer.matchId !== matchId) return;
     if (!['red', 'blue'].includes(alliance)) return;
-    if (!['minor', 'major'].includes(type)) return;
-    const last = db.prepare(
-      'SELECT id FROM penalties WHERE match_id=? AND alliance=? AND type=? ORDER BY created_at DESC LIMIT 1'
-    ).get(matchId, alliance, type);
+    if (!['minor', 'major', 'yellow', 'red'].includes(type)) return;
+    const last = teamNumber != null
+      ? db.prepare(
+          'SELECT id, team_number FROM penalties WHERE match_id=? AND alliance=? AND type=? AND team_number=? ORDER BY created_at DESC LIMIT 1'
+        ).get(matchId, alliance, type, teamNumber)
+      : db.prepare(
+          'SELECT id, team_number FROM penalties WHERE match_id=? AND alliance=? AND type=? ORDER BY created_at DESC LIMIT 1'
+        ).get(matchId, alliance, type);
     if (!last) return;
     db.prepare('DELETE FROM penalties WHERE id=?').run(last.id);
+
+    if ((type === 'yellow' || type === 'red') && last.team_number != null) {
+      removeCardFromMatchScores(matchId, alliance, type, last.team_number);
+    }
+
     const penalties = db.prepare('SELECT * FROM penalties WHERE match_id=? ORDER BY created_at').all(matchId);
     io.emit('penalty_removed', { matchId, removedId: last.id, all: penalties });
     broadcastScores(matchId);
   });
 
   // ── Card management ─────────────────────────────────────────────────────
+  // (legacy direct-card events — the current UI issues cards via 'penalty' above)
 
   socket.on('add_yellow_card', ({ matchId, alliance, teamNumber }) => {
-    const row = db.prepare('SELECT yellow_cards FROM match_scores WHERE match_id=? AND alliance=?').get(matchId, alliance);
-    const cards = JSON.parse(row?.yellow_cards || '[]');
-    if (!cards.includes(teamNumber)) cards.push(teamNumber);
-    db.prepare('UPDATE match_scores SET yellow_cards=? WHERE match_id=? AND alliance=?').run(JSON.stringify(cards), matchId, alliance);
+    addCardToMatchScores(matchId, alliance, 'yellow', teamNumber);
     broadcastScores(matchId);
   });
 
   socket.on('add_red_card', ({ matchId, alliance, teamNumber }) => {
-    const row = db.prepare('SELECT red_cards FROM match_scores WHERE match_id=? AND alliance=?').get(matchId, alliance);
-    const cards = JSON.parse(row?.red_cards || '[]');
-    if (!cards.includes(teamNumber)) cards.push(teamNumber);
-    db.prepare('UPDATE match_scores SET red_cards=? WHERE match_id=? AND alliance=?').run(JSON.stringify(cards), matchId, alliance);
+    addCardToMatchScores(matchId, alliance, 'red', teamNumber);
     broadcastScores(matchId);
+    if (!timer.matchEnded) {
+      timer.forceEnd();
+    }
   });
 
   socket.on('remove_card', ({ matchId, alliance, teamNumber, cardType }) => {
-    const field = cardType === 'red' ? 'red_cards' : 'yellow_cards';
-    const row = db.prepare(`SELECT ${field} FROM match_scores WHERE match_id=? AND alliance=?`).get(matchId, alliance);
-    const cards = JSON.parse(row?.[field] || '[]').filter(n => n !== teamNumber);
-    db.prepare(`UPDATE match_scores SET ${field}=? WHERE match_id=? AND alliance=?`).run(JSON.stringify(cards), matchId, alliance);
+    removeCardFromMatchScores(matchId, alliance, cardType, teamNumber);
     broadcastScores(matchId);
   });
 

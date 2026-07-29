@@ -6,6 +6,21 @@
 
 /* global io */
 
+// ─── Visual Viewport height fix ───────────────────────────────────────────────
+// On mobile browsers the address bar / toolbar overlaps content even with
+// height:100dvh. Using window.visualViewport.height gives the actual visible
+// height and resizing the body to match keeps bottom elements always reachable.
+// Only applied to pages that opt in with <body class="fit-viewport">.
+(function fitViewport() {
+  if (!window.visualViewport) return;
+  if (!document.body.classList.contains('fit-viewport')) return;
+  function update() {
+    document.body.style.height = window.visualViewport.height + 'px';
+  }
+  window.visualViewport.addEventListener('resize', update);
+  update();
+})();
+
 // ─── Toast notifications ──────────────────────────────────────────────────────
 
 (function initToasts() {
@@ -210,7 +225,30 @@ function addLogoutButton(container) {
 
 function connectSocket() {
   if (typeof io === 'undefined') { console.error('Socket.io not loaded'); return null; }
-  return io();
+  var sock = io();
+
+  // If the socket drops and doesn't recover within 8 s, reload the page.
+  var reloadTimer = null;
+  function scheduleReload() {
+    if (reloadTimer) return;
+    reloadTimer = setTimeout(function () { location.reload(); }, 8000);
+  }
+  function cancelReload() {
+    if (reloadTimer) { clearTimeout(reloadTimer); reloadTimer = null; }
+  }
+
+  sock.on('disconnect', scheduleReload);
+  sock.on('connect',    cancelReload);
+
+  // When the device wakes from sleep the socket is almost always dead.
+  // Reload immediately if we become visible while disconnected.
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible' && !sock.connected) {
+      location.reload();
+    }
+  });
+
+  return sock;
 }
 
 // ─── Timer state ──────────────────────────────────────────────────────────────

@@ -188,7 +188,7 @@
         // Match number label
         var numEl = document.createElement('div');
         numEl.className = 'bm-match-num';
-        numEl.textContent = 'Match ' + (match.matchNumber || match.id || '?');
+        numEl.textContent = match.matchNumber ? ('Match ' + match.matchNumber) : 'TBD';
         card.appendChild(numEl);
 
         // Red alliance row
@@ -251,7 +251,12 @@
         noBracket.classList.add('hidden');
         bracketContainer.classList.remove('hidden');
 
-        // Group by round, preserving insertion order
+        // Group by round, preserving insertion order. The server already
+        // returns matches in the correct chronological slot order (the same
+        // order each bracketN() definition lists WB-R1 -> ... -> Grand-Final
+        // in), so round columns just need to appear in first-seen order —
+        // round names like "WB-Final"/"LB-SF"/"Grand-Final" have no digits
+        // to sort by, so don't try to re-sort them.
         var roundOrder = [];
         var byRound = {};
         matches.forEach(function (m) {
@@ -261,14 +266,6 @@
             roundOrder.push(r);
           }
           byRound[r].push(m);
-        });
-
-        // Sort rounds if they follow "Round N" pattern
-        roundOrder.sort(function (a, b) {
-          var numA = parseInt(a.replace(/\D/g, ''), 10) || 0;
-          var numB = parseInt(b.replace(/\D/g, ''), 10) || 0;
-          if (numA !== numB) return numA - numB;
-          return a.localeCompare(b);
         });
 
         roundOrder.forEach(function (roundName) {

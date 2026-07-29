@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Red Scorer — Score Keeper</title>
   <link rel="stylesheet" href="/css/style.css">
   <style>
@@ -11,6 +11,7 @@
       background: var(--red-bg);
       display: flex; flex-direction: column;
       height: 100vh; height: 100dvh;
+      padding-bottom: 15vh;
       overflow: hidden;
     }
     .scorer-header {
@@ -63,19 +64,23 @@
       background: transparent; border: none;
       border-radius: 14px; min-height: 0; overflow: hidden;
     }
-    .score-main { flex: 2; }
+    .score-main { flex: 1; }
     .score-split .score-card-outer { flex: 1; }
     .score-card-outer.score-card-disabled {
       background: var(--bg3); border-color: var(--border); opacity: 0.55;
     }
     .score-side-btn {
-      flex: 2; min-width: 0;
-      background: var(--green); border: none;
-      color: #04140a; font-size: 3.5rem; font-weight: 300; line-height: 1;
+      flex: 2; min-width: 0; min-height: 0;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--green); border: none; outline: none;
+      color: #04140a; font-size: clamp(2rem, 8vh, 3.5rem); font-weight: 300; line-height: 1;
       cursor: pointer; touch-action: manipulation;
       -webkit-tap-highlight-color: transparent;
+      user-select: none;
     }
-    .score-side-btn:active { background: #10a84b; }
+    .score-side-btn:focus { outline: none; background: var(--green); }
+    .score-side-btn.btn-flash { background: #10a84b; }
+    .score-side-btn { transition: background 0.15s ease-out; }
     .score-card-center {
       flex: 1; min-width: 0; display: flex; flex-direction: column;
       align-items: center; justify-content: center;
@@ -94,29 +99,17 @@
       font-variant-numeric: tabular-nums; line-height: 1;
     }
     .score-split .score-card-count { font-size: clamp(1.8rem, 7vw, 3.5rem); }
-    .score-card-label {
-      font-size: clamp(0.7rem, 2.2vw, 1rem); font-weight: 700;
-      text-transform: uppercase; letter-spacing: 0.05em;
-      color: inherit; text-align: center; line-height: 1.2; flex-shrink: 0;
-    }
-    .score-card-pts {
-      font-size: clamp(0.65rem, 1.8vw, 0.85rem);
-      color: inherit; opacity: 0.65; flex-shrink: 0;
-    }
-    .score-card-count {
-      flex: 1; display: flex; align-items: center; justify-content: center;
-      font-size: clamp(2.2rem, 10vw, 5rem); font-weight: 900;
-      font-variant-numeric: tabular-nums; line-height: 1; min-height: 0;
-    }
-    /* Smaller count in split cards */
-    .score-split .score-card-count {
-      font-size: clamp(1.8rem, 7vw, 3.5rem);
-    }
 
-    /* Leave toggles — fixed-height row below the grid */
-    .toggle-row { display: flex; gap: 0.6rem; flex-shrink: 0; }
+    /* Leave toggles — rendered outside score-panel so they're never clipped */
+    #toggle-row-slot {
+      flex-shrink: 0;
+      padding: 0.4rem 0.65rem;
+      padding-bottom: max(0.65rem, env(safe-area-inset-bottom));
+    }
+    #toggle-row-slot:empty { display: none; }
+    .toggle-row { display: flex; gap: 0.6rem; }
     .toggle-btn {
-      flex: 1; padding: 0.8rem 0.4rem;
+      flex: 1; padding: clamp(0.4rem, 2vh, 0.8rem) 0.4rem;
       font-size: clamp(0.85rem, 2.5vw, 1rem); font-weight: 700;
       border-radius: 10px; border: 2px solid var(--border);
       touch-action: manipulation;
@@ -242,6 +235,54 @@
     }
     .pattern-count .pts-highlight { color: var(--green); font-weight: 800; }
 
+    /* Pattern table redesign */
+    .pattern-table-wrap { flex: 1; min-height: 0; overflow-y: auto; }
+    .pattern-table {
+      width: 100%; border-collapse: collapse;
+      border: 2px solid var(--red);
+    }
+    .pattern-table caption {
+      font-size: 0.78rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.08em; color: var(--text2);
+      padding: 0.35rem; caption-side: top; text-align: center;
+      border: 2px solid var(--red); border-bottom: none;
+    }
+    .pattern-table th {
+      font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.06em; color: var(--text2);
+      padding: 0.3rem 0.15rem; border-bottom: 1px solid #333;
+    }
+    .pattern-table td {
+      border: 1px solid #222; padding: 0.25rem 0.1rem; text-align: center;
+    }
+    .pattern-gate { color: var(--text2); font-size: 0.82rem; width: 2rem; }
+    .pattern-cell { cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+    .pattern-cell.sel { background: #3c3c3c; }
+    .p-ball {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: clamp(2rem, 8vw, 2.6rem); height: clamp(2rem, 8vw, 2.6rem);
+      border-radius: 50%; font-weight: 800; font-size: clamp(0.75rem, 3vw, 1rem);
+      margin: auto;
+    }
+    .p-ball-g { background: #1a7a35; color: #fff; border: 2px solid #1a7a35; }
+    .p-ball-p { background: #7700aa; color: #fff; border: 2px solid #7700aa; }
+    .p-ball-n { background: transparent; border: 3px solid #999; }
+    .p-result {
+      display: inline-block; border-radius: 50%;
+      width: clamp(1.5rem, 6vw, 2rem); height: clamp(1.5rem, 6vw, 2rem);
+      margin: auto;
+    }
+    .p-result-g { background: #1a7a35; border: 2px solid #1a7a35; }
+    .p-result-p { background: #7700aa; border: 2px solid #7700aa; }
+    .p-result-n { background: transparent; border: 3px solid #555; }
+    .pattern-submit-btn {
+      width: 100%; padding: 0.75rem; margin-top: 0.5rem; flex-shrink: 0;
+      background: #3a3a3a; color: var(--text); border: 1px solid #555;
+      font-size: 1rem; font-weight: 700; border-radius: 8px;
+      cursor: pointer; touch-action: manipulation;
+    }
+    .pattern-submit-btn:active { background: #555; }
+
     /* Total bar */
     .total-bar {
       background: #14080b; border-top: 2px solid var(--red);
@@ -266,9 +307,10 @@
       box-shadow: 0 2px 10px rgba(0,0,0,0.4);
     }
     #review-badge.visible { display: block; }
+
   </style>
 </head>
-<body>
+<body class="fit-viewport">
 
   <header class="scorer-header" id="scorer-header">
     <span class="scorer-title">RED SCORER</span>
@@ -289,6 +331,8 @@
   </div>
 
   <div id="score-panel" class="score-panel"></div>
+
+  <div id="toggle-row-slot"></div>
 
   <span id="total-score" style="display:none"></span>
 
@@ -322,15 +366,17 @@
       scores: {},
       parkR1: 'none',
       parkR2: 'none',
-      patternBalls: [false, false, false, false, false, false, false, false, false],
-      teleopPatternBalls: [false, false, false, false, false, false, false, false, false],
+      patternBalls: ['none','none','none','none','none','none','none','none','none'],
+      teleopPatternBalls: ['none','none','none','none','none','none','none','none','none'],
       motif: null,
       patternViewOpen: false,
       parkViewOpen: false,
-      buzzerScoringOpen: false,
       timerRunning: false,  // true only when running and not paused
       reviewing: false,
     };
+
+    var patternResetDone = false;
+    var parkResetDone = false;
 
     SK.mountPinPad(ALLIANCE, 'Red Alliance Scorer').then(function () {
       SK.addLogoutButton(document.getElementById('scorer-header'));
@@ -339,7 +385,8 @@
 
     var timerEl   = document.getElementById('timer-el');
     var periodLbl = document.getElementById('period-label');
-    var scorePanel = document.getElementById('score-panel');
+    var scorePanel      = document.getElementById('score-panel');
+    var toggleRowSlot   = document.getElementById('toggle-row-slot');
     var totalScore = document.getElementById('total-score');
     var waitOverlay = document.getElementById('wait-overlay');
     var waitText    = document.getElementById('wait-text');
@@ -350,12 +397,12 @@
     scoreViewBtn.addEventListener('click', function () {
       state.parkViewOpen = false;
       state.patternViewOpen = false;
-      state.buzzerScoringOpen = true;
       renderScoringPanel();
     });
 
     patternViewBtn.addEventListener('click', function () {
       state.patternViewOpen = !state.patternViewOpen;
+      if (state.patternViewOpen) state.parkViewOpen = false;
       renderScoringPanel();
     });
 
@@ -373,7 +420,6 @@
       auto_pattern:      2,
       teleop_classified: 3,
       teleop_overflow:   1,
-      teleop_balls:      1,
       park_partial:      5,
       park_full:         10,
       park_bonus:        10,
@@ -436,10 +482,10 @@
             state.parkR2 = (cyc && cyc.r2_park) || 'none';
             updateTotalScore(scores.total || 0);
             // Pre-fill pattern balls from saved per-ball state
-            var pb = scores.pattern_balls || '000000000';
-            state.patternBalls = pb.split('').map(function (c) { return c === '1'; });
-            var tpb = scores.teleop_pattern_balls || '000000000';
-            state.teleopPatternBalls = tpb.split('').map(function (c) { return c === '1'; });
+            var pb = scores.pattern_balls || 'nnnnnnnnn';
+            state.patternBalls = pb.split('').map(function (c) { return c === 'g' ? 'green' : c === 'p' ? 'purple' : 'none'; });
+            var tpb = scores.teleop_pattern_balls || 'nnnnnnnnn';
+            state.teleopPatternBalls = tpb.split('').map(function (c) { return c === 'g' ? 'green' : c === 'p' ? 'purple' : 'none'; });
           }
           renderScoringPanel();
         })
@@ -449,6 +495,7 @@
     // ── Score panel rendering ──────────────────────────────────────────────────
     function renderScoringPanel() {
       while (scorePanel.firstChild) scorePanel.removeChild(scorePanel.firstChild);
+      while (toggleRowSlot.firstChild) toggleRowSlot.removeChild(toggleRowSlot.firstChild);
 
       var period = state.currentPeriod;
 
@@ -460,83 +507,27 @@
         return;
       }
 
-      var ptype = period.type;
       hideWait();
+      scoreViewBtn.disabled   = false;
+      patternViewBtn.disabled = false;
+      parkViewBtn.disabled    = false;
 
-      // AUTO resets secondary views; non-BUZZER resets buzzer scoring flag
-      if (ptype === 'AUTO') {
-        state.patternViewOpen = false;
-        state.parkViewOpen = false;
-      }
-      if (ptype !== 'BUZZER') {
-        state.buzzerScoringOpen = false;
-      }
-
-      // Bar button availability
-      var inEndgame = (ptype === 'ENDGAME' || ptype === 'BUZZER');
-      scoreViewBtn.disabled   = !inEndgame;
-      parkViewBtn.disabled    = !inEndgame;
-      patternViewBtn.disabled = (ptype !== 'TRANSITION') && !(inEndgame && state.parkViewOpen);
-
-      // Pattern view from transition — "Back to Scoring" (auto pattern)
-      if (state.patternViewOpen && ptype === 'TRANSITION') {
-        renderPatternView(true);
+      if (state.patternViewOpen) {
+        renderPatternView();
         return;
       }
 
-      // Pattern view carried over from transition into teleop — still showing auto pattern
-      if (state.patternViewOpen && ptype === 'TELEOP') {
-        renderPatternView(true);
-        return;
-      }
-
-      // Pattern view from park view during endgame — "Confirm Pattern" (teleop pattern)
-      if (state.patternViewOpen && state.parkViewOpen && (ptype === 'ENDGAME' || ptype === 'BUZZER')) {
-        renderPatternView(false);
-        return;
-      }
-
-      // Park view open during endgame/buzzer
-      if (state.parkViewOpen && (ptype === 'ENDGAME' || ptype === 'BUZZER')) {
+      if (state.parkViewOpen) {
         renderEndgameSection();
         return;
       }
 
-      // Normal panels
+      var ptype = period.type;
       if (ptype === 'AUTO' || ptype === 'TRANSITION') {
         renderAutoSection();
-      } else if (ptype === 'TELEOP') {
+      } else {
         renderTeleopSection();
-      } else if (ptype === 'ENDGAME') {
-        renderTeleopSection();
-      } else if (ptype === 'BUZZER') {
-        if (state.buzzerScoringOpen) {
-          renderTeleopSection();
-        } else {
-          renderBuzzerPrompt();
-        }
       }
-    }
-
-    function renderBuzzerPrompt() {
-      var wrap = document.createElement('div');
-      wrap.style.cssText = 'flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;';
-
-      var lbl = document.createElement('div');
-      lbl.style.cssText = 'color:var(--text2);font-size:0.85rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;';
-      lbl.textContent = 'Match over';
-      wrap.appendChild(lbl);
-
-      var btn = document.createElement('button');
-      btn.className = 'btn-scoring-open';
-      btn.textContent = 'Open Scoring';
-      btn.addEventListener('click', function () {
-        state.buzzerScoringOpen = true;
-        renderScoringPanel();
-      });
-      wrap.appendChild(btn);
-
-      scorePanel.appendChild(wrap);
     }
 
     function showWait(msg) {
@@ -549,22 +540,20 @@
     }
 
     // ── Pattern view ──────────────────────────────────────────────────────────
-    function renderPatternView(inTransition) {
-      var heading = document.createElement('div');
-      heading.className = 'period-heading';
-      heading.textContent = 'Pattern';
-      scorePanel.appendChild(heading);
+    function renderPatternView() {
+      var ptype = state.currentPeriod ? state.currentPeriod.type : null;
+      var teleop = (ptype !== 'AUTO' && ptype !== 'TRANSITION');
 
-      scorePanel.appendChild(renderPatternGrid(!inTransition));
+      scorePanel.appendChild(renderPatternGrid(teleop));
 
-      var backBtn = document.createElement('button');
-      backBtn.className = inTransition ? 'btn-pattern-back' : 'btn-pattern-return';
-      backBtn.textContent = inTransition ? 'Back to Scoring' : 'Confirm Pattern';
-      backBtn.addEventListener('click', function () {
+      var submitBtn = document.createElement('button');
+      submitBtn.className = 'pattern-submit-btn';
+      submitBtn.textContent = 'Submit Pattern';
+      submitBtn.addEventListener('click', function () {
         state.patternViewOpen = false;
         renderScoringPanel();
       });
-      scorePanel.appendChild(backBtn);
+      scorePanel.appendChild(submitBtn);
     }
 
 
@@ -593,96 +582,119 @@
       toggleRow.className = 'toggle-row';
       toggleRow.appendChild(makeToggleBtn('R1 Left Zone', 'auto_leave_r1', state.scores.auto_leave_r1));
       toggleRow.appendChild(makeToggleBtn('R2 Left Zone', 'auto_leave_r2', state.scores.auto_leave_r2));
-      scorePanel.appendChild(toggleRow);
+      toggleRowSlot.appendChild(toggleRow);
     }
 
-    // ── Pattern ball grid ─────────────────────────────────────────────────────
-    var PATTERN_GRID_ID  = 'pattern-balls-grid';
-    var PATTERN_COUNT_ID = 'pattern-count-lbl';
-    var patternGridTeleop = false; // tracks which set the current grid is showing
+    // ── Pattern table ─────────────────────────────────────────────────────────
+    var patternGridTeleop = false;
 
     function renderPatternGrid(teleop) {
       patternGridTeleop = !!teleop;
       var ballsArr = teleop ? state.teleopPatternBalls : state.patternBalls;
 
-      var section = document.createElement('div');
-      section.className = 'pattern-section';
+      var wrap = document.createElement('div');
+      wrap.className = 'pattern-table-wrap';
 
-      var lbl = document.createElement('div');
-      lbl.className = 'pattern-heading';
-      lbl.textContent = 'Pattern — tap each correct ball';
-      section.appendChild(lbl);
+      var table = document.createElement('table');
+      table.className = 'pattern-table';
 
-      var grid = document.createElement('div');
-      grid.className = 'pattern-balls';
-      grid.id = PATTERN_GRID_ID;
+      var cap = document.createElement('caption');
+      cap.textContent = (ALLIANCE === 'red' ? 'Red' : 'Blue') + ' PATTERN Scoring';
+      table.appendChild(cap);
 
+      var thead = document.createElement('thead');
+      var hrow = document.createElement('tr');
+      ['GATE', 'GREEN', 'PURPLE', 'NONE', ''].forEach(function (h) {
+        var th = document.createElement('th');
+        th.textContent = h;
+        hrow.appendChild(th);
+      });
+      thead.appendChild(hrow);
+      table.appendChild(thead);
+
+      var tbody = document.createElement('tbody');
       for (var i = 0; i < 9; i++) {
         (function (idx) {
-          var ball = document.createElement('button');
-          var c = getBallColor(idx, state.motif);
-          ball.className = 'pattern-ball' + (ballsArr[idx] ? ' selected' : '');
-          ball.style.background  = c.bg;
-          ball.style.borderColor = c.bd;
-          ball.dataset.ballIdx   = idx;
-          ball.addEventListener('click', function () { togglePatternBall(idx); });
-          grid.appendChild(ball);
+          var tr = document.createElement('tr');
+
+          var tdGate = document.createElement('td');
+          tdGate.className = 'pattern-gate';
+          tdGate.textContent = idx + 1;
+          tr.appendChild(tdGate);
+
+          var choices = [
+            { key: 'green',  ballCls: 'p-ball p-ball-g', label: 'G' },
+            { key: 'purple', ballCls: 'p-ball p-ball-p', label: 'P' },
+            { key: 'none',   ballCls: 'p-ball p-ball-n', label: '' },
+          ];
+
+          choices.forEach(function (c) {
+            var td = document.createElement('td');
+            td.className = 'pattern-cell' + (ballsArr[idx] === c.key ? ' sel' : '');
+            td.dataset.pidx   = idx;
+            td.dataset.pcolor = c.key;
+
+            var ball = document.createElement('div');
+            ball.className = c.ballCls;
+            if (c.label) ball.textContent = c.label;
+            td.appendChild(ball);
+
+            td.addEventListener('click', function () { selectPatternColor(idx, c.key); });
+            td.addEventListener('touchstart', function (e) {
+              e.preventDefault();
+              selectPatternColor(idx, c.key);
+            }, { passive: false });
+            tr.appendChild(td);
+          });
+
+          var tdRes = document.createElement('td');
+          tdRes.id = 'p-result-' + idx;
+          tdRes.appendChild(makeResultDot(ballsArr[idx]));
+          tr.appendChild(tdRes);
+
+          tbody.appendChild(tr);
         })(i);
       }
-      section.appendChild(grid);
-
-      var countLbl = document.createElement('div');
-      countLbl.className = 'pattern-count';
-      countLbl.id = PATTERN_COUNT_ID;
-      refreshPatternCount(countLbl);
-      section.appendChild(countLbl);
-
-      return section;
+      table.appendChild(tbody);
+      wrap.appendChild(table);
+      return wrap;
     }
 
-    function refreshPatternCount(el) {
-      el = el || document.getElementById(PATTERN_COUNT_ID);
-      if (!el) return;
-      var ballsArr = patternGridTeleop ? state.teleopPatternBalls : state.patternBalls;
-      var count = ballsArr.filter(Boolean).length;
-      while (el.firstChild) el.removeChild(el.firstChild);
-      el.appendChild(document.createTextNode(count + ' / 9  \u00b7  '));
-      var sp = document.createElement('span');
-      sp.className = 'pts-highlight';
-      sp.textContent = '+' + (count * pts.auto_pattern) + ' pts';
-      el.appendChild(sp);
+    function makeResultDot(color) {
+      var d = document.createElement('div');
+      d.className = 'p-result ' + (color === 'green' ? 'p-result-g' : color === 'purple' ? 'p-result-p' : 'p-result-n');
+      return d;
     }
 
-    function togglePatternBall(idx) {
+    function selectPatternColor(idx, color) {
       var ballsArr = patternGridTeleop ? state.teleopPatternBalls : state.patternBalls;
-      ballsArr[idx] = !ballsArr[idx];
-      var grid = document.getElementById(PATTERN_GRID_ID);
-      if (grid) {
-        var balls = grid.querySelectorAll('.pattern-ball');
-        if (balls[idx]) {
-          balls[idx].className = 'pattern-ball' + (ballsArr[idx] ? ' selected' : '');
-        }
+      ballsArr[idx] = color;
+      var cells = document.querySelectorAll('[data-pidx="' + idx + '"]');
+      cells.forEach(function (cell) { cell.classList.toggle('sel', cell.dataset.pcolor === color); });
+      var res = document.getElementById('p-result-' + idx);
+      if (res) { while (res.firstChild) res.removeChild(res.firstChild); res.appendChild(makeResultDot(color)); }
+      sendPatternBall(idx, color);
+    }
+
+    function updatePatternGrid() {
+      var ballsArr = patternGridTeleop ? state.teleopPatternBalls : state.patternBalls;
+      for (var i = 0; i < 9; i++) {
+        var sel = ballsArr[i];
+        document.querySelectorAll('[data-pidx="' + i + '"]').forEach(function (cell) {
+          cell.classList.toggle('sel', cell.dataset.pcolor === sel);
+        });
+        var res = document.getElementById('p-result-' + i);
+        if (res) { while (res.firstChild) res.removeChild(res.firstChild); res.appendChild(makeResultDot(sel)); }
       }
-      refreshPatternCount(null);
-      sendPatternBall(idx, ballsArr[idx]);
     }
 
-    function sendPatternBall(idx, selected) {
+    function sendPatternBall(idx, color) {
       if (!state.matchId || (!state.timerRunning && !state.reviewing)) return;
-      getSocket().emit('pattern_ball', { matchId: state.matchId, alliance: ALLIANCE, ballIdx: idx, selected: selected });
+      getSocket().emit('pattern_ball', { matchId: state.matchId, alliance: ALLIANCE, ballIdx: idx, color: color });
     }
 
     // ── Motif colours ─────────────────────────────────────────────────────────
-    function applyMotifColors() {
-      var grid = document.getElementById(PATTERN_GRID_ID);
-      if (!grid) return;
-      var balls = grid.querySelectorAll('.pattern-ball');
-      for (var i = 0; i < balls.length; i++) {
-        var c = getBallColor(i, state.motif);
-        balls[i].style.background  = c.bg;
-        balls[i].style.borderColor = c.bd;
-      }
-    }
+    function applyMotifColors() { /* motif used for server-side scoring only */ }
 
     function fetchMotif(matchId) {
       fetch('/api/matches/' + matchId)
@@ -740,10 +752,21 @@
 
       // − button (left)
       if (withDecrement && !disabled) {
-        var decBtn = document.createElement('button');
+        var decBtn = document.createElement('div');
         decBtn.className = 'score-side-btn';
+        decBtn.setAttribute('role', 'button');
         decBtn.textContent = '−';
-        decBtn.addEventListener('click', function () { sendIncrement(field, -1); });
+        decBtn.addEventListener('touchstart', function (e) {
+          e.preventDefault();
+          sendIncrement(field, -1);
+          decBtn.classList.add('btn-flash');
+          setTimeout(function () { decBtn.classList.remove('btn-flash'); }, 120);
+        }, { passive: false });
+        decBtn.addEventListener('click', function () {
+          sendIncrement(field, -1);
+          decBtn.classList.add('btn-flash');
+          setTimeout(function () { decBtn.classList.remove('btn-flash'); }, 120);
+        });
         outer.appendChild(decBtn);
       }
 
@@ -771,10 +794,21 @@
 
       // + button (right)
       if (!disabled) {
-        var incBtn = document.createElement('button');
+        var incBtn = document.createElement('div');
         incBtn.className = 'score-side-btn';
+        incBtn.setAttribute('role', 'button');
         incBtn.textContent = '+';
-        incBtn.addEventListener('click', function () { sendIncrement(field, 1); });
+        incBtn.addEventListener('touchstart', function (e) {
+          e.preventDefault();
+          sendIncrement(field, 1);
+          incBtn.classList.add('btn-flash');
+          setTimeout(function () { incBtn.classList.remove('btn-flash'); }, 120);
+        }, { passive: false });
+        incBtn.addEventListener('click', function () {
+          sendIncrement(field, 1);
+          incBtn.classList.add('btn-flash');
+          setTimeout(function () { incBtn.classList.remove('btn-flash'); }, 120);
+        });
         outer.appendChild(incBtn);
       }
 
@@ -818,6 +852,30 @@
       return wrapper;
     }
 
+    // ── Period resets ─────────────────────────────────────────────────────────
+    function doPatternReset() {
+      if (state.matchId) {
+        for (var i = 0; i < 9; i++) {
+          getSocket().emit('pattern_ball', { matchId: state.matchId, alliance: ALLIANCE, ballIdx: i, color: 'none' });
+        }
+      }
+      state.patternBalls       = ['none','none','none','none','none','none','none','none','none'];
+      state.teleopPatternBalls = ['none','none','none','none','none','none','none','none','none'];
+      state.scores.auto_pattern   = 0;
+      state.scores.teleop_pattern = 0;
+      if (state.patternViewOpen) renderScoringPanel();
+    }
+
+    function doParkReset() {
+      if (state.matchId) {
+        getSocket().emit('park_update', { matchId: state.matchId, alliance: ALLIANCE, robot: 1, status: 'none' });
+        getSocket().emit('park_update', { matchId: state.matchId, alliance: ALLIANCE, robot: 2, status: 'none' });
+      }
+      state.parkR1 = 'none';
+      state.parkR2 = 'none';
+      if (state.parkViewOpen) renderScoringPanel();
+    }
+
     // ── Socket emitters ────────────────────────────────────────────────────────
     var socket;
     function getSocket() {
@@ -826,7 +884,9 @@
     }
 
     function sendIncrement(field, delta) {
-      if (!state.matchId || (!state.timerRunning && !state.reviewing)) return;
+      // Classified/Overflow stay live for the whole match — not gated on
+      // pause/running state (the server still enforces valid game periods).
+      if (!state.matchId) return;
       var ev = delta > 0 ? 'score_increment' : 'score_decrement';
       getSocket().emit(ev, { matchId: state.matchId, alliance: ALLIANCE, field: field });
     }
@@ -837,7 +897,10 @@
     }
 
     function sendParkUpdate(robot, status) {
-      if (!state.matchId || (!state.timerRunning && !state.reviewing)) return;
+      // Park stays live for the whole match — not gated on pause/running
+      // state (the server still enforces valid game periods), same as
+      // Classified/Overflow in sendIncrement above.
+      if (!state.matchId) return;
       getSocket().emit('park_update', { matchId: state.matchId, alliance: ALLIANCE, robot: robot, status: status });
     }
 
@@ -854,7 +917,7 @@
 
       // Update individual field displays without full re-render
       var fields = ['auto_classified','auto_overflow','auto_pattern','auto_leave_r1','auto_leave_r2',
-                    'teleop_classified','teleop_overflow','teleop_balls'];
+                    'teleop_classified','teleop_overflow'];
       fields.forEach(function (f) {
         var el = document.getElementById('field-' + f);
         if (el && allianceData[f] != null) el.textContent = allianceData[f];
@@ -867,30 +930,12 @@
 
       // Sync pattern balls from server state
       if (allianceData.pattern_balls != null) {
-        state.patternBalls = allianceData.pattern_balls.split('').map(function (c) { return c === '1'; });
-        if (!patternGridTeleop) {
-          var grid = document.getElementById(PATTERN_GRID_ID);
-          if (grid) {
-            var ballEls = grid.querySelectorAll('.pattern-ball');
-            for (var j = 0; j < ballEls.length; j++) {
-              ballEls[j].className = 'pattern-ball' + (state.patternBalls[j] ? ' selected' : '');
-            }
-            refreshPatternCount(null);
-          }
-        }
+        state.patternBalls = allianceData.pattern_balls.split('').map(function (c) { return c === 'g' ? 'green' : c === 'p' ? 'purple' : 'none'; });
+        if (!patternGridTeleop && state.patternViewOpen) updatePatternGrid();
       }
       if (allianceData.teleop_pattern_balls != null) {
-        state.teleopPatternBalls = allianceData.teleop_pattern_balls.split('').map(function (c) { return c === '1'; });
-        if (patternGridTeleop) {
-          var grid2 = document.getElementById(PATTERN_GRID_ID);
-          if (grid2) {
-            var ballEls2 = grid2.querySelectorAll('.pattern-ball');
-            for (var k = 0; k < ballEls2.length; k++) {
-              ballEls2[k].className = 'pattern-ball' + (state.teleopPatternBalls[k] ? ' selected' : '');
-            }
-            refreshPatternCount(null);
-          }
-        }
+        state.teleopPatternBalls = allianceData.teleop_pattern_balls.split('').map(function (c) { return c === 'g' ? 'green' : c === 'p' ? 'purple' : 'none'; });
+        if (patternGridTeleop && state.patternViewOpen) updatePatternGrid();
       }
 
       state.scores = Object.assign({}, state.scores, allianceData);
@@ -914,17 +959,26 @@
 
       sock.on('timer_tick', function (ts) {
         SK.applyTimerState(ts, timerEl, periodLbl);
+        var period = ts.period;
+        if (!period || !state.matchId) return;
+        var t = typeof ts.timeRemaining === 'number' ? ts.timeRemaining : 0;
+        if (period.type === 'TELEOP' && t <= 20 && !patternResetDone) {
+          patternResetDone = true;
+          doPatternReset();
+        }
+        if (period.type === 'ENDGAME' && t <= 20 && !parkResetDone) {
+          parkResetDone = true;
+          doParkReset();
+        }
       });
 
       sock.on('period_change', function (ts) {
         SK.applyTimerState(ts, timerEl, periodLbl);
         SK.playBuzzer();
         state.currentPeriod = ts.period;
-        if (!ts.period || ts.period.type !== 'TELEOP') state.patternViewOpen = false;
-        if (ts.period && ts.period.type === 'ENDGAME') {
-          state.parkR1 = 'none';
-          state.parkR2 = 'none';
-        }
+        var newType = ts.period ? ts.period.type : null;
+        if (newType === 'TELEOP') patternResetDone = false;
+        if (newType === 'ENDGAME') parkResetDone = false;
         renderScoringPanel();
       });
 
@@ -940,7 +994,6 @@
       sock.on('match_paused', function (ts) {
         SK.applyTimerState(ts, timerEl, periodLbl);
         state.timerRunning = false;
-        showWait('Paused');
       });
 
       sock.on('match_resumed', function (ts) {
@@ -952,10 +1005,9 @@
       sock.on('match_end', function () {
         state.timerRunning = false;
         state.reviewing = true;
-        state.buzzerScoringOpen = false;
         hideWait();
         document.getElementById('review-badge').classList.add('visible');
-        renderScoringPanel();   // last period is BUZZER → shows the "Open Scoring" prompt
+        renderScoringPanel();
       });
 
       sock.on('scores_reveal', function () {
@@ -984,12 +1036,13 @@
           state.currentPeriod = null;
           state.scores = {};
           state.motif = null;
-          state.patternBalls = [false, false, false, false, false, false, false, false, false];
-          state.teleopPatternBalls = [false, false, false, false, false, false, false, false, false];
+          state.patternBalls = ['none','none','none','none','none','none','none','none','none'];
+          state.teleopPatternBalls = ['none','none','none','none','none','none','none','none','none'];
           state.patternViewOpen = false;
           state.parkViewOpen = false;
-          state.buzzerScoringOpen = false;
           state.timerRunning = false;
+          patternResetDone = false;
+          parkResetDone = false;
           fetchScores(data.matchId, 0);
           fetchMotif(data.matchId);
         }

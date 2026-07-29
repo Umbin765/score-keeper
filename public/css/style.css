@@ -606,6 +606,221 @@ input:focus, select:focus { outline: 2px solid var(--blue); border-color: var(--
 }
 .score-card-count { font-family: var(--font-display); }
 
+/* ─── Notes system (headref.html + admin.html Notes tab) ─────────────────────── */
+.note-match-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  background: var(--bg3);
+  border-radius: 8px;
+  padding: 0.65rem 0.85rem;
+  cursor: pointer;
+}
+.note-match-row:hover { background: var(--bg4); }
+.note-match-row-label { font-weight: 700; font-size: 0.9rem; color: var(--text); }
+.note-match-row-count { font-size: 0.8rem; color: var(--text2); }
+.note-match-row-count.has-notes { color: var(--yellow); font-weight: 700; }
+.note-back-btn {
+  align-self: flex-start;
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 0.4rem 0.8rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg4);
+  color: var(--text2);
+  cursor: pointer;
+  margin-bottom: 0.4rem;
+}
+.note-back-btn:hover { color: var(--text); }
+.note-detail-heading { font-weight: 800; font-size: 1rem; color: var(--text); margin-bottom: 0.5rem; }
+.note-match-info {
+  font-size: 0.9rem;
+  color: var(--text2);
+  margin-bottom: 0.75rem;
+}
+.note-team-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+.note-team-btn {
+  padding: 0.5rem 0.9rem;
+  border-radius: 8px;
+  border: 2px solid var(--border);
+  background: var(--bg3);
+  color: var(--text2);
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.note-team-btn.selected.for-red     { background: #3a0d15; border-color: var(--red-light); color: var(--red-light); }
+.note-team-btn.selected.for-blue    { background: #0d1c36; border-color: var(--blue-light); color: var(--blue-light); }
+.note-team-btn.selected.for-general { background: var(--bg4); border-color: var(--text2); color: var(--text); }
+.note-textarea {
+  width: 100%;
+  min-height: 80px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  padding: 0.6rem 0.75rem;
+  font-family: var(--font-main);
+  font-size: 0.95rem;
+  resize: vertical;
+  margin-bottom: 0.75rem;
+}
+.btn-add-note {
+  background: var(--blue);
+  color: #fff;
+  font-weight: 700;
+  padding: 0.7rem 1.2rem;
+  border-radius: 8px;
+  border: none;
+  min-height: var(--tap);
+}
+.btn-add-note:hover:not(:disabled) { background: #2a7af0; }
+.btn-add-note:disabled { opacity: 0.4; cursor: not-allowed; }
+.note-search {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  margin-bottom: 0.75rem;
+}
+.notes-list { display: flex; flex-direction: column; gap: 0.6rem; max-height: 500px; overflow-y: auto; }
+.note-item {
+  background: var(--bg3);
+  border-radius: 8px;
+  padding: 0.65rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.note-item-header { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.note-item-match { font-weight: 700; font-size: 0.85rem; color: var(--text2); }
+.note-item-team { font-weight: 700; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.note-item-team.red     { color: var(--red-light); }
+.note-item-team.blue    { color: var(--blue-light); }
+.note-item-team.general { color: var(--text2); }
+.note-item-time { font-size: 0.72rem; color: var(--text2); }
+.note-item-text { font-size: 0.9rem; color: var(--text); white-space: pre-wrap; }
+.note-item-edit-textarea { width: 100%; min-height: 60px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); padding: 0.5rem; font-family: var(--font-main); font-size: 0.88rem; }
+.note-item-actions { display: flex; gap: 0.5rem; }
+.note-item-actions button {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg4);
+  color: var(--text2);
+}
+.note-item-actions button.note-del  { color: var(--red-light); border-color: var(--red-border); background: var(--red-bg); }
+.note-item-actions button.note-save { color: var(--green); border-color: var(--green); }
+.note-empty { text-align: center; color: var(--text2); font-style: italic; padding: 1.5rem; }
+
+/* ─── RP Violations (headref.html RP tab) ─────────────────────────────────────── */
+.rp-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+@media (max-width: 640px) {
+  .rp-grid { grid-template-columns: 1fr; }
+}
+.rp-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.rp-row {
+  background: var(--bg3);
+  border-radius: 8px;
+  padding: 0.65rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.rp-row-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.rp-row-label { font-weight: 700; font-size: 1rem; color: var(--text); flex: 1; }
+.rp-row-value { font-weight: 700; font-size: 1.05rem; color: var(--text2); font-variant-numeric: tabular-nums; }
+.rp-row-badge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.25rem 0.6rem;
+  border-radius: 5px;
+  display: none;
+}
+.rp-row-badge.mode-grant   { display: inline-block; background: #06230f; color: var(--green); }
+.rp-row-badge.mode-exclude { display: inline-block; background: var(--red-bg); color: var(--red-light); }
+.rp-row-badge.mode-override{ display: inline-block; background: #221a05; color: var(--yellow); }
+.rp-row-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.rp-row-actions button {
+  flex: 1 1 0;
+  min-height: var(--tap);
+  font-size: 0.95rem;
+  font-weight: 700;
+  padding: 0.6rem 0.7rem;
+  border-radius: 8px;
+  border: 2px solid var(--border);
+  background: var(--bg4);
+  color: var(--text2);
+}
+.rp-row-actions button[data-mode="grant"]    { border-color: var(--green); color: var(--green); }
+.rp-row-actions button[data-mode="exclude"]  { border-color: var(--red-light); color: var(--red-light); }
+.rp-row-actions button[data-mode="override"] { border-color: var(--yellow); color: var(--yellow); }
+.rp-row-actions button[data-mode="grant"]:active    { background: #06230f; }
+.rp-row-actions button[data-mode="exclude"]:active  { background: var(--red-bg); }
+.rp-row-actions button[data-mode="override"]:active { background: #221a05; }
+.rp-row-actions button.rp-clear-btn {
+  display: none;
+  flex: 1 1 100%;
+  color: var(--red-light);
+  border-color: var(--red-border);
+  background: var(--red-bg);
+}
+.rp-row.has-override .rp-row-actions button.rp-clear-btn { display: inline-block; }
+.rp-override-form {
+  display: none;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.rp-override-form.open { display: flex; }
+.rp-override-input {
+  width: 100px;
+  min-height: var(--tap);
+  font-size: 1.05rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 8px;
+  border: 2px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+}
+.rp-override-form button {
+  flex: 1 1 0;
+  min-height: var(--tap);
+  font-size: 0.95rem;
+  font-weight: 700;
+  padding: 0.6rem 0.7rem;
+  border-radius: 8px;
+  border: 2px solid var(--border);
+  background: var(--bg4);
+  color: var(--text2);
+}
+.rp-override-form .rp-override-confirm { color: var(--green); border-color: var(--green); }
+
 /* ─── Scrollbar ─────────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: var(--bg); }

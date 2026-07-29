@@ -159,6 +159,29 @@
     }
     .team-modal-cancel:hover { background: var(--bg4); }
 
+    /* penalty row: main button + decrement button */
+    .penalty-row {
+      display: flex;
+      gap: 0.5rem;
+    }
+    .penalty-dec-btn {
+      flex-shrink: 0;
+      width: 110px;
+      min-height: 68px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.15);
+      background: rgba(0,0,0,0.3);
+      color: var(--text);
+      font-size: 3.2rem;
+      font-weight: 700;
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      line-height: 1;
+    }
+    .penalty-dec-btn:active { background: rgba(0,0,0,0.5); }
+    .penalty-dec-btn:disabled { opacity: 0.25; cursor: not-allowed; }
+
     /* penalty buttons — override base to ensure large touch targets */
     .penalty-btn {
       font-family: var(--font-display);
@@ -239,6 +262,7 @@
     .log-alliance-cell.blue { color: var(--blue-light); }
 
     .log-time-cell { color: var(--text2); font-variant-numeric: tabular-nums; }
+    .log-clock-cell { color: var(--text2); font-variant-numeric: tabular-nums; }
     .log-team-cell { color: var(--text2); }
 
     .log-empty-row td {
@@ -303,6 +327,52 @@
       box-shadow: 0 2px 10px rgba(0,0,0,0.4);
     }
     #review-badge.visible { display: block; }
+
+    /* ── View tab bar ──────────────────────────────────────────────────── */
+    .view-tab-bar {
+      display: flex;
+      gap: 0.4rem;
+      padding: 0.6rem 1rem 0;
+      max-width: 1400px;
+      margin: 0 auto;
+      width: 100%;
+    }
+    .view-tab-btn {
+      padding: 0.5rem 1.1rem;
+      font-size: 0.85rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      border-radius: 8px 8px 0 0;
+      border: 1px solid var(--border);
+      border-bottom: none;
+      background: var(--bg2);
+      color: var(--text2);
+    }
+    .view-tab-btn.active { background: var(--bg); color: var(--text); }
+    .view-tab-btn:hover:not(.active) { background: var(--bg3); color: var(--text); }
+
+    /* ── Notes view (component styles shared via style.css) ──────────────── */
+    .notes-main {
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      max-width: 900px;
+      margin: 0 auto;
+      width: 100%;
+      padding-bottom: max(1rem, env(safe-area-inset-bottom));
+    }
+    .rp-main {
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      max-width: 1200px;
+      margin: 0 auto;
+      width: 100%;
+      padding-bottom: max(1rem, env(safe-area-inset-bottom));
+    }
   </style>
 </head>
 <body>
@@ -321,8 +391,15 @@
     </div>
   </header>
 
+  <!-- ── View tabs ────────────────────────────────────────────────────────── -->
+  <nav class="view-tab-bar" id="view-tab-bar">
+    <button class="view-tab-btn active" data-view="penalties">Penalties</button>
+    <button class="view-tab-btn" data-view="notes">Notes</button>
+    <button class="view-tab-btn" data-view="rp">RP Violations</button>
+  </nav>
+
   <!-- ── Main content ─────────────────────────────────────────────────────── -->
-  <main class="hr-main">
+  <main class="hr-main" id="penalties-view">
 
     <!-- ── Penalty panel ─────────────────────────────────────────────────── -->
     <div class="card" id="penalty-card">
@@ -333,19 +410,43 @@
         <!-- RED column -->
         <div class="penalty-col" id="red-penalty-col">
           <div class="penalty-col-title red-text">RED Alliance</div>
-          <button class="penalty-btn minor"       data-alliance="red" data-type="minor"   disabled>Minor Foul</button>
-          <button class="penalty-btn major"       data-alliance="red" data-type="major"   disabled>Major Foul</button>
-          <button class="penalty-btn yellow-card" data-alliance="red" data-type="yellow"  disabled>Yellow Card</button>
-          <button class="penalty-btn red-card"    data-alliance="red" data-type="red"     disabled>Red Card</button>
+          <div class="penalty-row">
+            <button class="penalty-btn minor" data-alliance="red" data-type="minor" disabled>Minor Foul</button>
+            <button class="penalty-dec-btn" data-alliance="red" data-type="minor" disabled title="Remove last red minor foul">−</button>
+          </div>
+          <div class="penalty-row">
+            <button class="penalty-btn major" data-alliance="red" data-type="major" disabled>Major Foul</button>
+            <button class="penalty-dec-btn" data-alliance="red" data-type="major" disabled title="Remove last red major foul">−</button>
+          </div>
+          <div class="penalty-row">
+            <button class="penalty-btn yellow-card" data-alliance="red" data-type="yellow" disabled>Yellow Card</button>
+            <button class="penalty-dec-btn" data-alliance="red" data-type="yellow" disabled title="Remove last red yellow card">−</button>
+          </div>
+          <div class="penalty-row">
+            <button class="penalty-btn red-card" data-alliance="red" data-type="red" disabled>Red Card</button>
+            <button class="penalty-dec-btn" data-alliance="red" data-type="red" disabled title="Remove last red red card">−</button>
+          </div>
         </div>
 
         <!-- BLUE column -->
         <div class="penalty-col" id="blue-penalty-col">
           <div class="penalty-col-title blue-text">BLUE Alliance</div>
-          <button class="penalty-btn minor"       data-alliance="blue" data-type="minor"   disabled>Minor Foul</button>
-          <button class="penalty-btn major"       data-alliance="blue" data-type="major"   disabled>Major Foul</button>
-          <button class="penalty-btn yellow-card" data-alliance="blue" data-type="yellow"  disabled>Yellow Card</button>
-          <button class="penalty-btn red-card"    data-alliance="blue" data-type="red"     disabled>Red Card</button>
+          <div class="penalty-row">
+            <button class="penalty-btn minor" data-alliance="blue" data-type="minor" disabled>Minor Foul</button>
+            <button class="penalty-dec-btn" data-alliance="blue" data-type="minor" disabled title="Remove last blue minor foul">−</button>
+          </div>
+          <div class="penalty-row">
+            <button class="penalty-btn major" data-alliance="blue" data-type="major" disabled>Major Foul</button>
+            <button class="penalty-dec-btn" data-alliance="blue" data-type="major" disabled title="Remove last blue major foul">−</button>
+          </div>
+          <div class="penalty-row">
+            <button class="penalty-btn yellow-card" data-alliance="blue" data-type="yellow" disabled>Yellow Card</button>
+            <button class="penalty-dec-btn" data-alliance="blue" data-type="yellow" disabled title="Remove last blue yellow card">−</button>
+          </div>
+          <div class="penalty-row">
+            <button class="penalty-btn red-card" data-alliance="blue" data-type="red" disabled>Red Card</button>
+            <button class="penalty-dec-btn" data-alliance="blue" data-type="red" disabled title="Remove last blue red card">−</button>
+          </div>
         </div>
 
       </div>
@@ -359,13 +460,14 @@
           <thead>
             <tr>
               <th>Time</th>
+              <th>Logged</th>
               <th>Type</th>
               <th>Team</th>
               <th>Alliance</th>
             </tr>
           </thead>
           <tbody id="log-tbody">
-            <tr class="log-empty-row"><td colspan="4">No penalties yet this match.</td></tr>
+            <tr class="log-empty-row"><td colspan="5">No penalties yet this match.</td></tr>
           </tbody>
         </table>
       </div>
@@ -380,6 +482,200 @@
       </div>
     </div>
 
+  </main>
+
+  <!-- ── Notes view ────────────────────────────────────────────────────────── -->
+  <main class="notes-main" id="notes-view" style="display:none">
+
+    <div class="card" id="add-note-card">
+      <h3 style="margin-bottom:0.75rem">Add Note</h3>
+      <div class="note-match-info" id="note-match-info">No match loaded — waiting for match data.</div>
+      <div class="note-team-picker" id="note-team-picker"></div>
+      <textarea class="note-textarea" id="note-text" placeholder="Note text…"></textarea>
+      <button class="btn-add-note" id="btn-add-note" disabled>Add Note</button>
+    </div>
+
+    <div class="card" id="notes-list-card">
+      <h3 style="margin-bottom:0.75rem">All Notes</h3>
+      <input class="note-search" id="note-search" placeholder="Search by team # or match #">
+      <div class="notes-list" id="notes-list">
+        <div class="note-empty">No notes yet.</div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ── RP Violations view ───────────────────────────────────────────────── -->
+  <main class="rp-main" id="rp-view" style="display:none">
+    <div class="card" id="rp-card">
+      <h3 style="margin-bottom:0.5rem">Ranking Point Violations</h3>
+      <div class="note-match-info" id="rp-match-info">No match loaded — waiting for match data.</div>
+      <div class="rp-grid">
+
+        <!-- RED column -->
+        <div class="rp-col" id="rp-col-red">
+          <div class="penalty-col-title red-text">RED Alliance</div>
+
+          <div class="rp-row" data-alliance="red" data-category="win">
+            <div class="rp-row-header">
+              <span class="rp-row-label">Win/Loss RP</span>
+              <span class="rp-row-value">—</span>
+              <span class="rp-row-badge"></span>
+            </div>
+            <div class="rp-row-actions">
+              <button type="button" data-mode="grant">Grant</button>
+              <button type="button" data-mode="exclude">Exclude</button>
+              <button type="button" data-mode="override">Override</button>
+              <button type="button" class="rp-clear-btn">Clear</button>
+            </div>
+            <div class="rp-override-form">
+              <input type="number" step="0.5" class="rp-override-input" placeholder="RP value">
+              <button type="button" class="rp-override-confirm">Set</button>
+              <button type="button" class="rp-override-cancel">Cancel</button>
+            </div>
+          </div>
+
+          <div class="rp-row" data-alliance="red" data-category="park">
+            <div class="rp-row-header">
+              <span class="rp-row-label">Park RP</span>
+              <span class="rp-row-value">—</span>
+              <span class="rp-row-badge"></span>
+            </div>
+            <div class="rp-row-actions">
+              <button type="button" data-mode="grant">Grant</button>
+              <button type="button" data-mode="exclude">Exclude</button>
+              <button type="button" data-mode="override">Override</button>
+              <button type="button" class="rp-clear-btn">Clear</button>
+            </div>
+            <div class="rp-override-form">
+              <input type="number" step="0.5" class="rp-override-input" placeholder="RP value">
+              <button type="button" class="rp-override-confirm">Set</button>
+              <button type="button" class="rp-override-cancel">Cancel</button>
+            </div>
+          </div>
+
+          <div class="rp-row" data-alliance="red" data-category="pattern">
+            <div class="rp-row-header">
+              <span class="rp-row-label">Pattern RP</span>
+              <span class="rp-row-value">—</span>
+              <span class="rp-row-badge"></span>
+            </div>
+            <div class="rp-row-actions">
+              <button type="button" data-mode="grant">Grant</button>
+              <button type="button" data-mode="exclude">Exclude</button>
+              <button type="button" data-mode="override">Override</button>
+              <button type="button" class="rp-clear-btn">Clear</button>
+            </div>
+            <div class="rp-override-form">
+              <input type="number" step="0.5" class="rp-override-input" placeholder="RP value">
+              <button type="button" class="rp-override-confirm">Set</button>
+              <button type="button" class="rp-override-cancel">Cancel</button>
+            </div>
+          </div>
+
+          <div class="rp-row" data-alliance="red" data-category="ball">
+            <div class="rp-row-header">
+              <span class="rp-row-label">Ball RP</span>
+              <span class="rp-row-value">—</span>
+              <span class="rp-row-badge"></span>
+            </div>
+            <div class="rp-row-actions">
+              <button type="button" data-mode="grant">Grant</button>
+              <button type="button" data-mode="exclude">Exclude</button>
+              <button type="button" data-mode="override">Override</button>
+              <button type="button" class="rp-clear-btn">Clear</button>
+            </div>
+            <div class="rp-override-form">
+              <input type="number" step="0.5" class="rp-override-input" placeholder="RP value">
+              <button type="button" class="rp-override-confirm">Set</button>
+              <button type="button" class="rp-override-cancel">Cancel</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- BLUE column -->
+        <div class="rp-col" id="rp-col-blue">
+          <div class="penalty-col-title blue-text">BLUE Alliance</div>
+
+          <div class="rp-row" data-alliance="blue" data-category="win">
+            <div class="rp-row-header">
+              <span class="rp-row-label">Win/Loss RP</span>
+              <span class="rp-row-value">—</span>
+              <span class="rp-row-badge"></span>
+            </div>
+            <div class="rp-row-actions">
+              <button type="button" data-mode="grant">Grant</button>
+              <button type="button" data-mode="exclude">Exclude</button>
+              <button type="button" data-mode="override">Override</button>
+              <button type="button" class="rp-clear-btn">Clear</button>
+            </div>
+            <div class="rp-override-form">
+              <input type="number" step="0.5" class="rp-override-input" placeholder="RP value">
+              <button type="button" class="rp-override-confirm">Set</button>
+              <button type="button" class="rp-override-cancel">Cancel</button>
+            </div>
+          </div>
+
+          <div class="rp-row" data-alliance="blue" data-category="park">
+            <div class="rp-row-header">
+              <span class="rp-row-label">Park RP</span>
+              <span class="rp-row-value">—</span>
+              <span class="rp-row-badge"></span>
+            </div>
+            <div class="rp-row-actions">
+              <button type="button" data-mode="grant">Grant</button>
+              <button type="button" data-mode="exclude">Exclude</button>
+              <button type="button" data-mode="override">Override</button>
+              <button type="button" class="rp-clear-btn">Clear</button>
+            </div>
+            <div class="rp-override-form">
+              <input type="number" step="0.5" class="rp-override-input" placeholder="RP value">
+              <button type="button" class="rp-override-confirm">Set</button>
+              <button type="button" class="rp-override-cancel">Cancel</button>
+            </div>
+          </div>
+
+          <div class="rp-row" data-alliance="blue" data-category="pattern">
+            <div class="rp-row-header">
+              <span class="rp-row-label">Pattern RP</span>
+              <span class="rp-row-value">—</span>
+              <span class="rp-row-badge"></span>
+            </div>
+            <div class="rp-row-actions">
+              <button type="button" data-mode="grant">Grant</button>
+              <button type="button" data-mode="exclude">Exclude</button>
+              <button type="button" data-mode="override">Override</button>
+              <button type="button" class="rp-clear-btn">Clear</button>
+            </div>
+            <div class="rp-override-form">
+              <input type="number" step="0.5" class="rp-override-input" placeholder="RP value">
+              <button type="button" class="rp-override-confirm">Set</button>
+              <button type="button" class="rp-override-cancel">Cancel</button>
+            </div>
+          </div>
+
+          <div class="rp-row" data-alliance="blue" data-category="ball">
+            <div class="rp-row-header">
+              <span class="rp-row-label">Ball RP</span>
+              <span class="rp-row-value">—</span>
+              <span class="rp-row-badge"></span>
+            </div>
+            <div class="rp-row-actions">
+              <button type="button" data-mode="grant">Grant</button>
+              <button type="button" data-mode="exclude">Exclude</button>
+              <button type="button" data-mode="override">Override</button>
+              <button type="button" class="rp-clear-btn">Clear</button>
+            </div>
+            <div class="rp-override-form">
+              <input type="number" step="0.5" class="rp-override-input" placeholder="RP value">
+              <button type="button" class="rp-override-confirm">Set</button>
+              <button type="button" class="rp-override-cancel">Cancel</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
   </main>
 
   <!-- ── Team picker modal ────────────────────────────────────────────────── -->
@@ -404,12 +700,32 @@
 
     // ── State ────────────────────────────────────────────────────────────────
     var state = {
-      matchId:   null,
-      redTeams:  [],
-      blueTeams: [],
+      matchId:     null,
+      matchNumber: null,
+      redTeams:    [],
+      blueTeams:   [],
+      penalties:   [],
     };
 
-    var matchRunning = false;
+    var notesCache        = [];
+    var selectedNoteTeam  = null; // { alliance, teamNumber } or null for a general note
+    var allMatchesCache   = [];
+    var notesViewMode      = 'list';   // 'list' (all matches) | 'detail' (one match's notes)
+    var notesDetailMatchId = null;
+
+    // RP breakdown for the current match, per alliance: { winLossRp, parkRp, patternRp, ballRp, total }
+    var rpCache = { red: null, blue: null };
+    // Active RP overrides for the current match, per alliance, keyed by category
+    var rpOverridesCache = { red: {}, blue: {} };
+
+    var matchRunning   = false;
+    var buttonsEnabled = false;
+
+    // ── Penalty counts per alliance/type, used to enable/disable dec buttons ──
+    var penaltyCounts = {
+      red:  { minor: 0, major: 0, yellow: 0, red: 0 },
+      blue: { minor: 0, major: 0, yellow: 0, red: 0 },
+    };
 
     // ── Element refs ─────────────────────────────────────────────────────────
     var timerEl      = document.getElementById('timer-el');
@@ -438,12 +754,38 @@
     function init() {
       setButtonsEnabled(false);
       wireButtons();
+      wireViewTabs();
+      wireNotesUI();
+      wireRpUI();
       fetchTimerState();
+      fetchAllNotes();
+      fetchAllMatchesForNotes();
       connectSocketEvents();
+    }
+
+    // ── View tabs (Penalties / Notes) ─────────────────────────────────────────
+    function wireViewTabs() {
+      var tabBar = document.getElementById('view-tab-bar');
+      var views = {
+        penalties: document.getElementById('penalties-view'),
+        notes:     document.getElementById('notes-view'),
+        rp:        document.getElementById('rp-view'),
+      };
+      tabBar.querySelectorAll('.view-tab-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          tabBar.querySelectorAll('.view-tab-btn').forEach(function (b) {
+            b.classList.toggle('active', b === btn);
+          });
+          Object.keys(views).forEach(function (key) {
+            views[key].style.display = (key === btn.dataset.view) ? '' : 'none';
+          });
+        });
+      });
     }
 
     // ── Enable / disable all penalty buttons ─────────────────────────────────
     function setButtonsEnabled(enabled) {
+      buttonsEnabled = enabled;
       var btns = document.querySelectorAll('.penalty-btn');
       for (var i = 0; i < btns.length; i++) {
         if (enabled) {
@@ -451,6 +793,17 @@
         } else {
           btns[i].setAttribute('disabled', '');
         }
+      }
+      updateDecButtons();
+    }
+
+    // ── Enable / disable dec buttons based on match state + current counts ────
+    function updateDecButtons() {
+      var decBtns = document.querySelectorAll('.penalty-dec-btn');
+      for (var i = 0; i < decBtns.length; i++) {
+        var btn = decBtns[i];
+        var count = penaltyCounts[btn.dataset.alliance][btn.dataset.type];
+        btn.disabled = !buttonsEnabled || count === 0;
       }
     }
 
@@ -463,6 +816,30 @@
             emitPenalty(btn.dataset.alliance, btn.dataset.type);
           });
         })(btns[i]);
+      }
+
+      var decBtns = document.querySelectorAll('.penalty-dec-btn');
+      for (var i = 0; i < decBtns.length; i++) {
+        (function (btn) {
+          btn.addEventListener('click', function () {
+            var alliance = btn.dataset.alliance;
+            var type     = btn.dataset.type;
+            if (!matchRunning && !document.getElementById('review-badge').classList.contains('visible')) {
+              showToast('Match is not active', 'error');
+              return;
+            }
+            if (!state.matchId) {
+              showToast('No match loaded', 'error');
+              return;
+            }
+            if (CARD_TYPES[type]) {
+              // Cards are team-specific — ask which team's card to revoke.
+              showTeamModal(alliance, type, 'remove');
+            } else {
+              emitRemovePenalty(alliance, type, null);
+            }
+          });
+        })(decBtns[i]);
       }
 
       document.getElementById('btn-commit').addEventListener('click', commitScores);
@@ -498,21 +875,62 @@
       });
     }
 
-    // ── Team picker modal ─────────────────────────────────────────────────────
-    function showTeamModal(alliance, type) {
-      var teams     = alliance === 'red' ? state.redTeams : state.blueTeams;
+    // ── Emit remove-penalty (removes the most recent matching entry) ─────────
+    function emitRemovePenalty(alliance, type, teamNumber) {
+      if (!matchRunning && !document.getElementById('review-badge').classList.contains('visible')) {
+        showToast('Match is not active', 'error');
+        return;
+      }
+      if (!state.matchId) {
+        showToast('No match loaded', 'error');
+        return;
+      }
+      getSocket().emit('remove_penalty', {
+        matchId:    state.matchId,
+        alliance:   alliance,
+        type:       type,
+        teamNumber: teamNumber != null ? teamNumber : null,
+      });
+    }
+
+    // Teams currently holding at least one card of this alliance/type, in the
+    // order they were carded — most-recently-carded last.
+    function cardHolders(alliance, type) {
+      var seen = [];
+      state.penalties.forEach(function (p) {
+        if (p.alliance !== alliance || p.type !== type) return;
+        var teamNum = p.team_number || p.teamNumber;
+        if (teamNum == null) return;
+        var idx = seen.indexOf(teamNum);
+        if (idx !== -1) seen.splice(idx, 1);
+        seen.push(teamNum);
+      });
+      return seen;
+    }
+
+    // ── Team picker modal ──────────────────────────────────────────────────────
+    // mode 'add' (default): pick who receives a new card.
+    // mode 'remove': pick whose card to revoke.
+    function showTeamModal(alliance, type, mode) {
+      mode = mode || 'add';
       var typeName  = type === 'yellow' ? 'Yellow Card' : 'Red Card';
       var colorCls  = 'for-' + alliance;
+      var teams     = mode === 'remove'
+        ? cardHolders(alliance, type)
+        : (alliance === 'red' ? state.redTeams : state.blueTeams);
 
-      modalTitle.textContent = typeName;
-      modalSub.textContent   = (alliance.toUpperCase()) + ' Alliance — who receives this card?';
+      modalTitle.textContent = (mode === 'remove' ? 'Remove ' : '') + typeName;
+      modalSub.textContent   = (alliance.toUpperCase()) + ' Alliance — ' +
+        (mode === 'remove' ? 'whose card should be removed?' : 'who receives this card?');
 
       // Build team buttons
       while (modalBtns.firstChild) modalBtns.removeChild(modalBtns.firstChild);
       if (teams.length === 0) {
         var none = document.createElement('div');
         none.style.cssText = 'text-align:center;color:var(--text2);padding:0.5rem';
-        none.textContent = 'No teams loaded for this alliance.';
+        none.textContent = mode === 'remove'
+          ? 'No ' + typeName.toLowerCase() + 's to remove.'
+          : 'No teams loaded for this alliance.';
         modalBtns.appendChild(none);
       } else {
         teams.forEach(function (teamNum) {
@@ -521,7 +939,11 @@
           btn.textContent = 'Team ' + teamNum;
           btn.addEventListener('click', function () {
             closeTeamModal();
-            dispatchPenalty(alliance, type, teamNum);
+            if (mode === 'remove') {
+              emitRemovePenalty(alliance, type, teamNum);
+            } else {
+              dispatchPenalty(alliance, type, teamNum);
+            }
           });
           modalBtns.appendChild(btn);
         });
@@ -586,12 +1008,33 @@
       sock.on('score_update', function (data) {
         if (data && data.red  && data.red.total  != null) redScoreEl.textContent  = data.red.total;
         if (data && data.blue && data.blue.total != null) blueScoreEl.textContent = data.blue.total;
+        if (data && data.redRP)  rpCache.red  = data.redRP;
+        if (data && data.blueRP) rpCache.blue = data.blueRP;
+        renderRpRows();
       });
 
-      sock.on('penalty_added', function (entry) {
+      sock.on('rp_override_changed', function (data) {
+        if (!data || !data.overrides || data.matchId !== state.matchId) return;
+        rpOverridesCache = data.overrides;
+        renderRpRows();
+      });
+
+      sock.on('penalty_added', function (data) {
+        var entry = data && (data.penalty || data);
+        if (!entry) return;
+        if (data.all) state.penalties = data.all;
         prependLogRow(entry);
+        if (penaltyCounts[entry.alliance]) {
+          penaltyCounts[entry.alliance][entry.type] = (penaltyCounts[entry.alliance][entry.type] || 0) + 1;
+          updateDecButtons();
+        }
         var label = (entry.alliance || '').toUpperCase() + ' — ' + formatPenaltyType(entry.type);
         showToast(label, 'error');
+      });
+
+      sock.on('penalty_removed', function (data) {
+        if (!data || !data.all) return;
+        rebuildFromList(data.all);
       });
 
       sock.on('match_start', function () {
@@ -619,6 +1062,12 @@
           state.matchId = data.matchId;
           fetchMatch(data.matchId);
           fetchPenalties(data.matchId);
+          fetchRpState(data.matchId);
+        } else {
+          state.matchId = null;
+          state.matchNumber = null;
+          updateNoteMatchInfo();
+          fetchRpState(null);
         }
         resetLog();
         updateNoMatchNotice();
@@ -630,6 +1079,26 @@
         document.getElementById('review-badge').classList.remove('visible');
         resetLog();
         updateNoMatchNotice();
+        fetchRpState(state.matchId);
+      });
+
+      sock.on('note_added', function (note) {
+        if (!note) return;
+        notesCache.unshift(note);
+        renderNotesList();
+      });
+
+      sock.on('note_updated', function (note) {
+        if (!note) return;
+        var idx = notesCache.findIndex(function (n) { return n.id === note.id; });
+        if (idx !== -1) notesCache[idx] = note;
+        renderNotesList();
+      });
+
+      sock.on('note_removed', function (data) {
+        if (!data) return;
+        notesCache = notesCache.filter(function (n) { return n.id !== data.id; });
+        renderNotesList();
       });
     }
 
@@ -643,11 +1112,13 @@
             state.matchId = ts.matchId;
             fetchMatch(ts.matchId);
             fetchPenalties(ts.matchId);
+            fetchRpState(ts.matchId);
             updateNoMatchNotice();
           }
           var inReview = !!(ts.matchEnded && !ts.scoresRevealed);
           document.getElementById('review-badge').classList.toggle('visible', inReview);
-          if (inReview) setButtonsEnabled(true);
+          matchRunning = !!ts.running;
+          if (matchRunning || inReview) setButtonsEnabled(true);
         })
         .catch(function () {});
     }
@@ -661,42 +1132,60 @@
 
     function populateTeams(match) {
       function num(t) { return t && t.number ? t.number : null; }
-      state.redTeams  = [num(match.red1_team),  num(match.red2_team) ].filter(Boolean);
-      state.blueTeams = [num(match.blue1_team), num(match.blue2_team)].filter(Boolean);
+      state.redTeams   = [num(match.red1_team),  num(match.red2_team) ].filter(Boolean);
+      state.blueTeams  = [num(match.blue1_team), num(match.blue2_team)].filter(Boolean);
+      state.matchNumber = match.match_number != null ? match.match_number : null;
+      renderNoteTeamPicker();
+      updateNoteMatchInfo();
+      updateRpMatchInfo();
     }
 
     // ── Penalty log ───────────────────────────────────────────────────────────
     function fetchPenalties(matchId) {
       fetch('/api/matches/' + matchId + '/penalties')
         .then(function (r) { return r.json(); })
-        .then(function (list) {
-          resetLog();
-          if (!list || !list.length) return;
-          // API returns oldest-first; we want newest-first in the table,
-          // so iterate in reverse and prepend.
-          for (var i = list.length - 1; i >= 0; i--) {
-            var p = list[i];
-            prependLogRow({
-              match_time:  p.match_time || (p.period_name || '--'),
-              type:        p.type,
-              team_number: p.team_number,
-              alliance:    p.alliance,
-            });
-          }
-        })
+        .then(function (list) { rebuildFromList(list); })
         .catch(function () {});
+    }
+
+    // Rebuild the log table + penalty counts from a full (oldest-first) list.
+    function rebuildFromList(list) {
+      resetLog();
+      state.penalties = list || [];
+      if (!list || !list.length) return;
+      // API returns oldest-first; we want newest-first in the table,
+      // so iterate in reverse and prepend.
+      for (var i = list.length - 1; i >= 0; i--) {
+        var p = list[i];
+        if (penaltyCounts[p.alliance] && penaltyCounts[p.alliance][p.type] != null) {
+          penaltyCounts[p.alliance][p.type]++;
+        }
+        prependLogRow({
+          match_time:  p.match_time || (p.period_name || '--'),
+          created_at:  p.created_at,
+          type:        p.type,
+          team_number: p.team_number,
+          alliance:    p.alliance,
+        });
+      }
+      updateDecButtons();
     }
 
     function resetLog() {
       while (logTbody.firstChild) logTbody.removeChild(logTbody.firstChild);
       appendEmptyRow();
+      state.penalties = [];
+      penaltyCounts = {
+        red:  { minor: 0, major: 0, yellow: 0, red: 0 },
+        blue: { minor: 0, major: 0, yellow: 0, red: 0 },
+      };
     }
 
     function appendEmptyRow() {
       var tr = document.createElement('tr');
       tr.className = 'log-empty-row';
       var td = document.createElement('td');
-      td.colSpan = 4;
+      td.colSpan = 5;
       td.textContent = 'No penalties yet this match.';
       tr.appendChild(td);
       logTbody.appendChild(tr);
@@ -713,6 +1202,12 @@
       tdTime.className = 'log-time-cell';
       tdTime.textContent = entry.match_time != null ? String(entry.match_time) : (entry.time || '--');
 
+      var tdClock = document.createElement('td');
+      tdClock.className = 'log-clock-cell';
+      tdClock.textContent = entry.created_at != null
+        ? new Date(entry.created_at * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        : '--';
+
       var tdType = document.createElement('td');
       tdType.className = 'log-type-cell ' + (entry.type || '');
       tdType.textContent = formatPenaltyType(entry.type);
@@ -728,6 +1223,7 @@
       tdAlliance.textContent = (entry.alliance || '').toUpperCase();
 
       tr.appendChild(tdTime);
+      tr.appendChild(tdClock);
       tr.appendChild(tdType);
       tr.appendChild(tdTeam);
       tr.appendChild(tdAlliance);
@@ -755,6 +1251,506 @@
       if (noMatchNote) {
         noMatchNote.style.display = state.matchId ? 'none' : 'block';
       }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Notes
+    // ═══════════════════════════════════════════════════════════════════════
+
+    var noteMatchInfoEl  = document.getElementById('note-match-info');
+    var noteTeamPickerEl = document.getElementById('note-team-picker');
+    var noteTextEl       = document.getElementById('note-text');
+    var btnAddNote       = document.getElementById('btn-add-note');
+    var noteSearchEl     = document.getElementById('note-search');
+    var notesListEl      = document.getElementById('notes-list');
+
+    function wireNotesUI() {
+      btnAddNote.addEventListener('click', submitNote);
+      noteSearchEl.addEventListener('input', renderNotesList);
+    }
+
+    function updateNoteMatchInfo() {
+      if (!state.matchId) {
+        noteMatchInfoEl.textContent = 'No match loaded — waiting for match data.';
+        btnAddNote.disabled = true;
+        return;
+      }
+      var label = state.matchNumber != null ? ('Match ' + state.matchNumber) : ('Match #' + state.matchId);
+      var redStr  = state.redTeams.length  ? state.redTeams.join(', ')  : '—';
+      var blueStr = state.blueTeams.length ? state.blueTeams.join(', ') : '—';
+      noteMatchInfoEl.textContent = label + ' — Red: ' + redStr + ' · Blue: ' + blueStr;
+      btnAddNote.disabled = false;
+    }
+
+    function renderNoteTeamPicker() {
+      while (noteTeamPickerEl.firstChild) noteTeamPickerEl.removeChild(noteTeamPickerEl.firstChild);
+      selectedNoteTeam = null;
+
+      var generalBtn = document.createElement('button');
+      generalBtn.type = 'button';
+      generalBtn.className = 'note-team-btn selected for-general';
+      generalBtn.textContent = 'General';
+      generalBtn.addEventListener('click', function () { selectNoteTeam(null, generalBtn); });
+      noteTeamPickerEl.appendChild(generalBtn);
+
+      function addTeamBtn(alliance, teamNum) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'note-team-btn for-' + alliance;
+        btn.textContent = 'Team ' + teamNum;
+        btn.addEventListener('click', function () { selectNoteTeam({ alliance: alliance, teamNumber: teamNum }, btn); });
+        noteTeamPickerEl.appendChild(btn);
+      }
+      state.redTeams.forEach(function (t)  { addTeamBtn('red', t); });
+      state.blueTeams.forEach(function (t) { addTeamBtn('blue', t); });
+    }
+
+    function selectNoteTeam(team, btnEl) {
+      selectedNoteTeam = team;
+      noteTeamPickerEl.querySelectorAll('.note-team-btn').forEach(function (b) {
+        b.classList.toggle('selected', b === btnEl);
+      });
+    }
+
+    function submitNote() {
+      if (!state.matchId) { showToast('No match loaded', 'error'); return; }
+      var text = noteText_value();
+      if (!text) { showToast('Note text is empty', 'error'); return; }
+      dispatchNewNote(state.matchId, selectedNoteTeam, text, function () {
+        noteTextEl.value = '';
+      });
+    }
+
+    function noteText_value() {
+      return (noteTextEl.value || '').trim();
+    }
+
+    // Shared POST used by both the "current match" Add Note form and the
+    // per-match add-note form inside the All Notes match detail view.
+    function dispatchNewNote(matchId, team, text, onSuccess) {
+      fetch('/api/notes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          matchId:    matchId,
+          alliance:   team ? team.alliance : null,
+          teamNumber: team ? team.teamNumber : null,
+          note:       text,
+          author:     'headref',
+        }),
+      })
+        .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+        .then(function () {
+          showToast('Note added', 'success');
+          if (onSuccess) onSuccess();
+        })
+        .catch(function () { showToast('Failed to add note', 'error'); });
+    }
+
+    function fetchAllNotes() {
+      fetch('/api/notes')
+        .then(function (r) { return r.json(); })
+        .then(function (notes) {
+          notesCache = notes || [];
+          renderNotesList();
+        })
+        .catch(function () {});
+    }
+
+    function fetchAllMatchesForNotes() {
+      fetch('/api/matches')
+        .then(function (r) { return r.json(); })
+        .then(function (matches) {
+          allMatchesCache = matches || [];
+          renderNotesList();
+        })
+        .catch(function () {});
+    }
+
+    // Renders either the match list or a single match's note detail,
+    // depending on notesViewMode.
+    function renderNotesList() {
+      if (notesViewMode === 'detail') {
+        renderNotesDetail();
+      } else {
+        renderNotesMatchList();
+      }
+    }
+
+    function openNotesMatch(matchId) {
+      notesViewMode = 'detail';
+      notesDetailMatchId = matchId;
+      renderNotesList();
+    }
+
+    function backToNotesMatchList() {
+      notesViewMode = 'list';
+      notesDetailMatchId = null;
+      renderNotesList();
+    }
+
+    function renderNotesMatchList() {
+      var query = (noteSearchEl.value || '').trim().toLowerCase();
+      var matches = allMatchesCache.slice().sort(function (a, b) { return a.match_number - b.match_number; });
+
+      if (query) {
+        matches = matches.filter(function (m) {
+          if (String(m.match_number).indexOf(query) !== -1) return true;
+          return notesCache.some(function (n) {
+            return n.match_id === m.id && n.team_number != null && String(n.team_number).indexOf(query) !== -1;
+          });
+        });
+      }
+
+      while (notesListEl.firstChild) notesListEl.removeChild(notesListEl.firstChild);
+
+      if (!matches.length) {
+        var empty = document.createElement('div');
+        empty.className = 'note-empty';
+        empty.textContent = query ? 'No matches found.' : 'No matches yet.';
+        notesListEl.appendChild(empty);
+        return;
+      }
+
+      matches.forEach(function (m) {
+        var count = notesCache.filter(function (n) { return n.match_id === m.id; }).length;
+
+        var row = document.createElement('div');
+        row.className = 'note-match-row';
+        row.addEventListener('click', function () { openNotesMatch(m.id); });
+
+        var label = document.createElement('span');
+        label.className = 'note-match-row-label';
+        label.textContent = (m.phase === 'playoffs' ? 'P' : 'Q') + m.match_number;
+        row.appendChild(label);
+
+        var countEl = document.createElement('span');
+        countEl.className = 'note-match-row-count' + (count ? ' has-notes' : '');
+        countEl.textContent = count ? (count === 1 ? '1 note' : count + ' notes') : 'No notes';
+        row.appendChild(countEl);
+
+        notesListEl.appendChild(row);
+      });
+    }
+
+    function renderNotesDetail() {
+      var match = allMatchesCache.find(function (m) { return m.id === notesDetailMatchId; });
+
+      while (notesListEl.firstChild) notesListEl.removeChild(notesListEl.firstChild);
+
+      var backBtn = document.createElement('button');
+      backBtn.type = 'button';
+      backBtn.className = 'note-back-btn';
+      backBtn.textContent = '← All matches';
+      backBtn.addEventListener('click', backToNotesMatchList);
+      notesListEl.appendChild(backBtn);
+
+      var heading = document.createElement('div');
+      heading.className = 'note-detail-heading';
+      heading.textContent = match
+        ? ((match.phase === 'playoffs' ? 'Playoff ' : 'Qualification ') + match.match_number)
+        : ('Match #' + notesDetailMatchId);
+      notesListEl.appendChild(heading);
+
+      if (match) notesListEl.appendChild(buildDetailAddNoteForm(match));
+
+      var matchNotes = notesCache.filter(function (n) { return n.match_id === notesDetailMatchId; });
+      if (!matchNotes.length) {
+        var empty = document.createElement('div');
+        empty.className = 'note-empty';
+        empty.textContent = 'No notes for this match yet.';
+        notesListEl.appendChild(empty);
+        return;
+      }
+
+      matchNotes.forEach(function (note) { notesListEl.appendChild(buildNoteItem(note)); });
+    }
+
+    // Small "Add note to this match" form shown inside the match detail view,
+    // so the head ref can note a prior match/team, not just the live one.
+    function buildDetailAddNoteForm(match) {
+      var wrap = document.createElement('div');
+      wrap.className = 'note-item';
+
+      var picker = document.createElement('div');
+      picker.className = 'note-team-picker';
+
+      var selected = null; // { alliance, teamNumber } or null for a general note
+
+      function addPickerBtn(label, team, cls) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'note-team-btn' + (cls ? ' ' + cls : '');
+        btn.textContent = label;
+        btn.addEventListener('click', function () {
+          selected = team;
+          picker.querySelectorAll('.note-team-btn').forEach(function (b) {
+            b.classList.toggle('selected', b === btn);
+          });
+        });
+        picker.appendChild(btn);
+        return btn;
+      }
+
+      var generalBtn = addPickerBtn('General', null, 'for-general selected');
+      [
+        ['red',  match.red1_team],
+        ['red',  match.red2_team],
+        ['blue', match.blue1_team],
+        ['blue', match.blue2_team],
+      ].forEach(function (pair) {
+        var alliance = pair[0], team = pair[1];
+        if (!team) return;
+        addPickerBtn('Team ' + team.number, { alliance: alliance, teamNumber: team.number }, 'for-' + alliance);
+      });
+      wrap.appendChild(picker);
+
+      var textarea = document.createElement('textarea');
+      textarea.className = 'note-textarea';
+      textarea.placeholder = 'Add a note to this match…';
+      wrap.appendChild(textarea);
+
+      var addBtn = document.createElement('button');
+      addBtn.type = 'button';
+      addBtn.className = 'btn-add-note';
+      addBtn.textContent = 'Add Note';
+      addBtn.addEventListener('click', function () {
+        var text = textarea.value.trim();
+        if (!text) { showToast('Note text is empty', 'error'); return; }
+        dispatchNewNote(match.id, selected, text, function () {
+          textarea.value = '';
+          selected = null;
+          picker.querySelectorAll('.note-team-btn').forEach(function (b) {
+            b.classList.toggle('selected', b === generalBtn);
+          });
+        });
+      });
+      wrap.appendChild(addBtn);
+
+      return wrap;
+    }
+
+    function buildNoteItem(note) {
+      var item = document.createElement('div');
+      item.className = 'note-item';
+
+      var header = document.createElement('div');
+      header.className = 'note-item-header';
+
+      var matchEl = document.createElement('span');
+      matchEl.className = 'note-item-match';
+      matchEl.textContent = note.match_number != null ? ('Match ' + note.match_number) : ('Match #' + note.match_id);
+      header.appendChild(matchEl);
+
+      var teamEl = document.createElement('span');
+      if (note.team_number != null) {
+        teamEl.className = 'note-item-team ' + (note.alliance || '');
+        teamEl.textContent = (note.alliance || '').toUpperCase() + ' — Team ' + note.team_number;
+      } else {
+        teamEl.className = 'note-item-team general';
+        teamEl.textContent = 'General';
+      }
+      header.appendChild(teamEl);
+
+      var timeEl = document.createElement('span');
+      timeEl.className = 'note-item-time';
+      timeEl.textContent = note.created_at
+        ? new Date(note.created_at * 1000).toLocaleString([], { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+        : '';
+      header.appendChild(timeEl);
+
+      item.appendChild(header);
+
+      var textEl = document.createElement('div');
+      textEl.className = 'note-item-text';
+      textEl.textContent = note.note;
+      item.appendChild(textEl);
+
+      var actions = document.createElement('div');
+      actions.className = 'note-item-actions';
+
+      var editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.textContent = 'Edit';
+      editBtn.addEventListener('click', function () { startEditNote(item, note); });
+      actions.appendChild(editBtn);
+
+      var delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'note-del';
+      delBtn.textContent = 'Delete';
+      delBtn.addEventListener('click', function () { deleteNote(note.id); });
+      actions.appendChild(delBtn);
+
+      item.appendChild(actions);
+      return item;
+    }
+
+    function startEditNote(item, note) {
+      while (item.firstChild) item.removeChild(item.firstChild);
+
+      var textarea = document.createElement('textarea');
+      textarea.className = 'note-item-edit-textarea';
+      textarea.value = note.note;
+      item.appendChild(textarea);
+
+      var actions = document.createElement('div');
+      actions.className = 'note-item-actions';
+
+      var saveBtn = document.createElement('button');
+      saveBtn.type = 'button';
+      saveBtn.className = 'note-save';
+      saveBtn.textContent = 'Save';
+      saveBtn.addEventListener('click', function () {
+        var newText = textarea.value.trim();
+        if (!newText) { showToast('Note text is empty', 'error'); return; }
+        fetch('/api/notes/' + note.id, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ note: newText }),
+        })
+          .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+          .then(function () { showToast('Note updated', 'success'); })
+          .catch(function () { showToast('Failed to update note', 'error'); });
+      });
+      actions.appendChild(saveBtn);
+
+      var cancelBtn = document.createElement('button');
+      cancelBtn.type = 'button';
+      cancelBtn.textContent = 'Cancel';
+      cancelBtn.addEventListener('click', renderNotesList);
+      actions.appendChild(cancelBtn);
+
+      item.appendChild(actions);
+    }
+
+    function deleteNote(id) {
+      if (!confirm('Delete this note?')) return;
+      fetch('/api/notes/' + id, { method: 'DELETE' })
+        .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+        .then(function () { showToast('Note deleted', 'info'); })
+        .catch(function () { showToast('Failed to delete note', 'error'); });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // RP Violations
+    // ═══════════════════════════════════════════════════════════════════════
+
+    var RP_FIELD_BY_CATEGORY = { win: 'winLossRp', park: 'parkRp', pattern: 'patternRp', ball: 'ballRp' };
+
+    function wireRpUI() {
+      document.querySelectorAll('.rp-row').forEach(function (row) {
+        var alliance = row.dataset.alliance;
+        var category = row.dataset.category;
+        var form  = row.querySelector('.rp-override-form');
+        var input = row.querySelector('.rp-override-input');
+
+        row.querySelectorAll('.rp-row-actions button[data-mode]').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            if (btn.dataset.mode === 'override') {
+              form.classList.add('open');
+              input.focus();
+              return;
+            }
+            setRpOverride(alliance, category, btn.dataset.mode, null);
+          });
+        });
+
+        row.querySelector('.rp-override-confirm').addEventListener('click', function () {
+          var val = parseFloat(input.value);
+          if (isNaN(val)) { showToast('Enter a numeric RP value', 'error'); return; }
+          setRpOverride(alliance, category, 'override', val);
+          form.classList.remove('open');
+          input.value = '';
+        });
+
+        row.querySelector('.rp-override-cancel').addEventListener('click', function () {
+          form.classList.remove('open');
+          input.value = '';
+        });
+
+        row.querySelector('.rp-clear-btn').addEventListener('click', function () {
+          clearRpOverride(alliance, category);
+        });
+      });
+    }
+
+    function updateRpMatchInfo() {
+      var el = document.getElementById('rp-match-info');
+      if (!el) return;
+      if (!state.matchId) {
+        el.textContent = 'No match loaded — waiting for match data.';
+        return;
+      }
+      el.textContent = state.matchNumber != null ? ('Match ' + state.matchNumber) : ('Match #' + state.matchId);
+    }
+
+    function fetchRpState(matchId) {
+      updateRpMatchInfo();
+      if (!matchId) {
+        rpCache = { red: null, blue: null };
+        rpOverridesCache = { red: {}, blue: {} };
+        renderRpRows();
+        return;
+      }
+      fetch('/api/matches/' + matchId + '/scores')
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          rpCache.red = d.redRP;
+          rpCache.blue = d.blueRP;
+          renderRpRows();
+        })
+        .catch(function () {});
+
+      fetch('/api/matches/' + matchId + '/rp-overrides')
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          rpOverridesCache = d || { red: {}, blue: {} };
+          renderRpRows();
+        })
+        .catch(function () {});
+    }
+
+    function renderRpRows() {
+      document.querySelectorAll('.rp-row').forEach(function (row) {
+        var alliance = row.dataset.alliance;
+        var category = row.dataset.category;
+        var rp = rpCache[alliance];
+        var valueEl = row.querySelector('.rp-row-value');
+        var val = rp ? rp[RP_FIELD_BY_CATEGORY[category]] : null;
+        valueEl.textContent = val != null ? ('Current: ' + val + ' RP') : '—';
+
+        var override = rpOverridesCache[alliance] ? rpOverridesCache[alliance][category] : null;
+        var badge = row.querySelector('.rp-row-badge');
+        row.classList.toggle('has-override', !!override);
+        if (override) {
+          badge.className = 'rp-row-badge mode-' + override.mode;
+          badge.textContent = override.mode === 'override' ? ('OVERRIDE: ' + override.value) : override.mode.toUpperCase();
+        } else {
+          badge.className = 'rp-row-badge';
+          badge.textContent = '';
+        }
+      });
+    }
+
+    function setRpOverride(alliance, category, mode, value) {
+      if (!state.matchId) { showToast('No match loaded', 'error'); return; }
+      fetch('/api/matches/' + state.matchId + '/rp-overrides', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ alliance: alliance, category: category, mode: mode, value: value }),
+      })
+        .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+        .then(function () { showToast('RP ' + mode + ' set', 'success'); })
+        .catch(function () { showToast('Failed to set RP override', 'error'); });
+    }
+
+    function clearRpOverride(alliance, category) {
+      if (!state.matchId) return;
+      fetch('/api/matches/' + state.matchId + '/rp-overrides/' + alliance + '/' + category, { method: 'DELETE' })
+        .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+        .then(function () { showToast('RP override cleared', 'info'); })
+        .catch(function () { showToast('Failed to clear override', 'error'); });
     }
 
   })();
