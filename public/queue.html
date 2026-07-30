@@ -200,9 +200,9 @@
         onfieldContent.appendChild(renderTeamsRow(match.red, match.blue, 'large'));
       }
 
-      function renderQueueNow(match) {
+      function renderQueueNow(matches) {
         while (sectionQueue.firstChild) sectionQueue.removeChild(sectionQueue.firstChild);
-        if (!match) {
+        if (!matches || matches.length === 0) {
           sectionQueue.classList.add('hidden');
           return;
         }
@@ -213,8 +213,16 @@
         title.className = 'queue-section-title';
         title.textContent = 'Report to Queue Now';
         sectionQueue.appendChild(title);
-        sectionQueue.appendChild(makeMatchNumEl(match.matchNumber, true));
-        sectionQueue.appendChild(renderTeamsRow(match.red, match.blue, 'large'));
+
+        matches.forEach(function (match, i) {
+          if (i > 0) {
+            var divider = document.createElement('div');
+            divider.style.cssText = 'height:1px;background:var(--border);margin:0.75rem 0;';
+            sectionQueue.appendChild(divider);
+          }
+          sectionQueue.appendChild(makeMatchNumEl(match.matchNumber, true));
+          sectionQueue.appendChild(renderTeamsRow(match.red, match.blue, 'large'));
+        });
       }
 
       function renderUpcoming(matches) {
@@ -249,7 +257,7 @@
       function applyQueueData(data) {
         if (!data) return;
         renderOnField(data.onField ? adaptMatch(data.onField) : null);
-        renderQueueNow(data.queued  ? adaptMatch(data.queued)  : null);
+        renderQueueNow((data.queued || []).map(adaptMatch));
         renderUpcoming((data.upcoming || []).map(adaptMatch));
       }
 

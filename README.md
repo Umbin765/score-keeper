@@ -616,7 +616,7 @@ The `value` field is a number for all numeric fields, or a JSON array of team nu
 | Method | Path | Response |
 |--------|------|----------|
 | GET | `/api/rankings` | `Ranking[]` (sorted) |
-| GET | `/api/queue` | `{ onField, queued, upcoming }` |
+| GET | `/api/queue` | `{ onField: Match\|null, queued: Match[], upcoming: Match[] }` — `queued` is every match currently in state `QUEUED` (not just the next one), ordered by match number |
 | GET | `/api/network-info` | `{ port, urls: string[] }` — this machine's LAN IPv4 addresses (from `os.networkInterfaces()`), formatted as full `http://ip:port` URLs. Backs the "Access" tab's QR code in `admin.html`; empty `urls` means no non-internal IPv4 interface was found (e.g. offline machine). |
 
 ### Bracket & Alliances
@@ -749,6 +749,12 @@ Computes full scores for both alliances via `getFullScore`, computes live RP via
 
 #### `matchWithTeams(match)`
 Enriches a match row with team details (`red1_team`, `red2_team`, `blue1_team`, `blue2_team`) by looking up team IDs.
+
+#### `pushPublicData()`
+Pushes a snapshot (`rankings`, `matches`, `results`, `bracket`, `updatedAt`) to the public spectator site (a separate `score-keeper-public` Vercel deployment) via `POST ${PUBLIC_VERCEL_URL}/api/sync`, authenticated with `SYNC_SECRET` as a bearer token. No-ops silently if either env var is unset. Fire-and-forget — a failed push just logs to the console and doesn't affect the local response; the next successful push carries the full current state, so nothing is permanently lost. Called after every match commit, and on a 20s interval plus once at startup so the public site stays in sync even between commits (team roster changes, schedule regeneration, etc.).
+
+#### `pushQueueData()`
+Same pattern as `pushPublicData()`, but pushes the queue state (`onField`, `queued`, `upcoming` from `getQueueState()`) plus the current `pin_queue` setting to `POST ${PUBLIC_VERCEL_URL}/api/queue-sync`, backing a PIN-gated public queue view (`/queue.html` on the `score-keeper-public` deployment — separate from and not to be confused with the local `queue.html`). The PIN is stored server-side on Vercel and never returned by its public read endpoint; visitors must enter the same PIN as `queue.html`'s local PIN pad. Called on every match state change (`Call to Queue` / `Set On Field`), every commit (`Save`), every playoff bracket match creation, and on the same 20s interval as `pushPublicData()`.
 
 ---
 

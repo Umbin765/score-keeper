@@ -1,5 +1,7 @@
 'use strict';
 
+require('dotenv').config();
+
 const express = require('express');
 const http = require('http');
 const { Server: SocketIO } = require('socket.io');
@@ -257,6 +259,7 @@ app.put('/api/matches/:id/state', (req, res) => {
   const match = db.prepare('SELECT * FROM matches WHERE id=?').get(matchId);
   io.emit('match_state_change', { matchId, state, match: matchWithTeams(match) });
   io.emit('queue_update', getQueueState());
+  pushQueueData();
 
   res.json({ ok: true });
 });
@@ -495,6 +498,27 @@ function pushPublicData() {
   });
 }
 
+// ─── Push queue snapshot to Vercel (PIN-gated public queue view) ─────────────
+
+function pushQueueData() {
+  const vercelUrl = process.env.PUBLIC_VERCEL_URL;
+  const secret    = process.env.SYNC_SECRET;
+  if (!vercelUrl || !secret) return; // not configured, skip silently
+
+  const settings = getSettingsMap(db);
+  const body = JSON.stringify({ ...getQueueState(), pin: settings.pin_queue, updatedAt: new Date().toISOString() });
+
+  fetch(vercelUrl + '/api/queue-sync', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + secret },
+    body,
+  }).then(function (r) {
+    if (!r.ok) console.error('[queue sync] HTTP', r.status);
+  }).catch(function (err) {
+    console.error('[queue sync] failed:', err.message);
+  });
+}
+
 // If this match is linked to a bracket slot, record the winning alliance
 // (by score comparison) once it's committed. Ties are left unresolved for
 // the admin to set manually via POST /api/bracket/matches/:id/winner —
@@ -522,6 +546,7 @@ app.post('/api/matches/:id/commit', (req, res) => {
 
   recordBracketWinnerIfLinked(matchId);
   pushPublicData();
+  pushQueueData();
 
   res.json({ ok: true, rankings });
 });
@@ -687,12 +712,12 @@ app.get('/api/rankings', (_req, res) => {
 
 function getQueueState() {
   const onField = db.prepare("SELECT * FROM matches WHERE state='ON_FIELD' ORDER BY match_number").get();
-  const queued  = db.prepare("SELECT * FROM matches WHERE state='QUEUED' ORDER BY match_number").get();
+  const queued  = db.prepare("SELECT * FROM matches WHERE state='QUEUED' ORDER BY match_number").all();
   const upcoming = db.prepare("SELECT * FROM matches WHERE state='UPCOMING' ORDER BY match_number LIMIT 3").all();
 
   return {
     onField: onField ? matchWithTeams(onField) : null,
-    queued: queued ? matchWithTeams(queued) : null,
+    queued: queued.map(matchWithTeams),
     upcoming: upcoming.map(matchWithTeams),
   };
 }
@@ -769,6 +794,7 @@ app.post('/api/bracket/matches/:id/create-match', (req, res) => {
 
   io.emit('bracket_update', getBracket(db));
   io.emit('queue_update', getQueueState());
+  pushQueueData();
   res.json({ ok: true, matchId, matchNumber });
 });
 
@@ -834,6 +860,8 @@ app.post('/api/admin/reset', (req, res) => {
   db.prepare('DELETE FROM match_scores').run();
   db.prepare('DELETE FROM bracket_matches').run();
   db.prepare('DELETE FROM alliance_selections').run();
+  db.prepare('DELETE FROM notes').run();
+  db.prepare('DELETE FROM rp_overrides').run();
   db.prepare('DELETE FROM matches').run();
   db.prepare('DELETE FROM teams').run();
 
@@ -1205,4 +1233,12 @@ server.listen(PORT, '0.0.0.0', () => {
     console.log('Network access:           http://' + ip + ':' + PORT);
   }
   console.log('');
+
+  // Keep the public site in sync with local state even between match commits
+  // (team roster changes, schedule regeneration, bracket updates, etc.) —
+  // pushPublicData() itself is fire-and-forget and no-ops if unconfigured.
+  pushPublicData();
+  setInterval(pushPublicData, 20000);
+  pushQueueData();
+  setInterval(pushQueueData, 20000);
 });
