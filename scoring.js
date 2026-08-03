@@ -263,8 +263,7 @@ function updateRankings(db, includeMatchId = null) {
       const alliance = (match.red1 === team.id || match.red2 === team.id) ? 'red' : 'blue';
       const opp = alliance === 'red' ? 'blue' : 'red';
 
-      const scoreRow = db.prepare('SELECT red_cards FROM match_scores WHERE match_id=? AND alliance=?').get(match.id, alliance);
-      const isDQ = JSON.parse(scoreRow?.red_cards || '[]').length > 0;
+      const isDQ = isAllianceRedCarded(db, match.id, alliance);
 
       const rp = calculateRP(db, match.id, alliance);
       totalRp += rp;

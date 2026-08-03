@@ -294,6 +294,20 @@ Head Referee / Admin notes system (see `headref.html`'s Notes tab and `admin.htm
 
 Head Referee RP Violations system (see `headref.html`'s "RP Violations" tab). At most one override per alliance/category/match — setting a new mode for the same category replaces it in place (same row `id`, upserted via `ON CONFLICT`). Three modes: **grant** (forces the category to its max — 2 for park/pattern/ball, `rp_win` for win/loss), **exclude** (forces it to 0, and the alliance cannot earn it back by playing better), **override** (forces it to an exact referee-supplied value, taking precedence over everything including a red-card DQ). Deleting the row (`DELETE /api/matches/:id/rp-overrides/:alliance/:category`) reverts that category to normal auto-calculation. See `scoring.js`'s `computeRpBreakdown()`.
 
+### `team_cards`
+
+| Column | Type | Constraints |
+|--------|------|-------------|
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT |
+| `team_number` | INTEGER | NOT NULL |
+| `card_type` | TEXT | NOT NULL, CHECK IN ('yellow','red') |
+| `phase` | TEXT | NOT NULL, CHECK IN ('quals','playoffs') |
+| `origin_match_id` | INTEGER | nullable, REFERENCES matches(id) — the match the card was issued in |
+| `created_at` | INTEGER | NOT NULL, DEFAULT unixepoch() |
+| | | UNIQUE(team_number, phase, card_type) |
+
+An **outstanding** (carried-over) card: once a team is issued a yellow or red card, it's recorded here and carries into every one of that team's future matches within the same phase — see `getEffectiveCards()` — until it's either undone in the same match it was issued in, or explicitly deleted via `DELETE /api/team-cards/:teamNumber/:cardType` (see `admin.html`'s "Cards" tab). A team can only carry one open yellow and one open red per phase (re-issuing while already outstanding is a no-op). `POST /api/bracket/init` deletes every `phase='quals'` row so playoffs start with a clean slate; playoff cards then carry independently within playoffs.
+
 ---
 
 ## Default Settings
@@ -388,13 +402,28 @@ Computes the complete score for one alliance. Reads `match_scores`, `endgame_cyc
   },
   raw,                // raw match_scores row
   cycles,             // endgame_cycles rows
-  yellow_cards,       // parsed JSON array of team numbers
-  red_cards           // parsed JSON array of team numbers
+  yellow_cards,       // effective team numbers (see getEffectiveCards) — issued in this match OR carried in
+  red_cards           // effective team numbers (see getEffectiveCards) — issued in this match OR carried in
 }
 ```
 
+#### `getEffectiveCards(db, matchId, alliance, cardType) -> number[]`
+Team numbers with an effective `cardType` card for this alliance in this match: the union of `match_scores.<type>_cards` (issued directly in this match) and any team's outstanding `team_cards` row for the match's phase (carried in from an earlier match). Carried cards are never written into `match_scores` — they're merged here at read time, so deleting a `team_cards` row takes effect everywhere on the next read. This is the single source of truth `getFullScore` and `isAllianceRedCarded` both read from.
+
 #### `isAllianceRedCarded(db, matchId, alliance) -> boolean`
-True when an alliance has **any** red card recorded in `match_scores.red_cards` for this match (any one team is enough — per the SEC Game Manual, a single confirmed red card ends the match immediately, unlike the earlier full-alliance-DQ rule). Used by `server.js` to force an early match end and by `computeRpBreakdown` to auto-grant the opposing alliance's full RP.
+True when an alliance has **any** effective red card for this match — issued directly here, or carried in from an earlier match in the same phase (any one team is enough — per the SEC Game Manual, a single confirmed red card ends the match immediately). Used by `server.js` to force an early match end (both when a card is issued live, and when a match carrying one is loaded) and by `computeRpBreakdown` to auto-grant the opposing alliance's full RP.
+
+#### `addOutstandingCard(db, matchId, teamNumber, cardType) -> void`
+Records a card as outstanding (phase resolved from the match) so it carries into that team's future matches within the same phase. No-ops if already outstanding for that team/phase/type.
+
+#### `clearOutstandingCardIfOrigin(db, matchId, teamNumber, cardType) -> void`
+Deletes the outstanding record only if `matchId` is the match it originated in — used when a referee undoes a card in the same match it was just issued in, so a mistaken card doesn't leave a phantom carry-forward. A no-op for a card carried in from an earlier match (deleting *that* requires `deleteOutstandingCard`).
+
+#### `deleteOutstandingCard(db, teamNumber, cardType) -> void`
+Explicit admin action (`DELETE /api/team-cards/:teamNumber/:cardType`) — stops a card from carrying forward at all, regardless of which match it originated in. Does not touch the historical per-match `penalties`/`match_scores` record.
+
+#### `getOutstandingCards(db) -> Object[]`
+All currently-outstanding cards, joined with team name and origin match number, newest first. Backs `GET /api/team-cards` and `admin.html`'s "Cards" tab.
 
 ---
 
@@ -581,7 +610,7 @@ Roles: `red`, `blue`, `ref`, `headref`, `control`, `queue`. The `headref` role a
 | GET | `/api/matches/:id` | — | `Match` with team details |
 | POST | `/api/matches/generate` | — | `{ ok, count }` |
 | PUT | `/api/matches/:id/state` | `{ state }` | `{ ok }` |
-| POST | `/api/matches/:id/load` | — | `{ ok, periods }` |
+| POST | `/api/matches/:id/load` | — | `{ ok, periods }` — if either alliance has an effective red card (see `isAllianceRedCarded`, includes cards carried in from an earlier match), the match is immediately force-ended (`timer.forceEnd()`), same as a card issued live |
 | POST | `/api/matches/:id/motif/randomize` | — | `{ ok, motif }` |
 | PUT | `/api/matches/:id/motif` | `{ motif }` | `{ ok, motif }` |
 
@@ -624,7 +653,7 @@ The `value` field is a number for all numeric fields, or a JSON array of team nu
 | Method | Path | Body | Response |
 |--------|------|------|----------|
 | GET | `/api/bracket` | — | `BracketMatch[]` (see `getBracket` — enriched with resolved alliance rosters/labels and scores) |
-| POST | `/api/bracket/init` | — | `{ ok, allianceCount }` |
+| POST | `/api/bracket/init` | — | `{ ok, allianceCount }` — also deletes every `phase='quals'` row from `team_cards`, so playoffs start with no carried-over cards; broadcasts `team_cards_update` |
 | POST | `/api/bracket/matches/:id/winner` | `{ winnerAlliance }` | `{ ok }` — manual winner fallback for a tied/edge-case match; broadcasts `bracket_update` |
 | POST | `/api/bracket/matches/:id/assign` | `{ side: 'red'\|'blue', allianceNumber }` | `{ ok }` — sets that bracket slot's red/blue alliance (used to route a recorded winner/loser into the next round); broadcasts `bracket_update` |
 | POST | `/api/bracket/matches/:id/create-match` | — | `{ ok, matchId }` — creates a playoff `matches` row (phase `'playoffs'`) for a bracket slot once both red/blue alliances are assigned; idempotent (returns the existing `match_id` if already linked); resolves team ids via `getAllianceRoster`; match number is `MAX(match_number WHERE phase='playoffs') + 1`; broadcasts `bracket_update` and `queue_update` so the new match appears in `control.html`'s pipeline like any other match |
@@ -662,6 +691,15 @@ The `value` field is a number for all numeric fields, or a JSON array of team nu
 | DELETE | `/api/matches/:id/rp-overrides/:alliance/:category` | — | `{ ok, overrides }` — broadcasts `rp_override_changed` and re-broadcasts `score_update` |
 
 `category` is one of `win`/`park`/`pattern`/`ball`. `mode` is one of `grant`/`exclude`/`override`; `value` is required (and only used) when `mode='override'`.
+
+### Cards
+
+| Method | Path | Response |
+|--------|------|----------|
+| GET | `/api/team-cards` | `Object[]` from `getOutstandingCards` — every currently-outstanding card, joined with team name and origin match number, newest first |
+| DELETE | `/api/team-cards/:teamNumber/:cardType` | `{ ok }` — stops the card from carrying forward (any phase); broadcasts `team_cards_update`; re-broadcasts `score_update` if the team is in the currently-loaded match |
+
+`cardType` is `yellow` or `red`. See the `team_cards` table above for how carrying-over works.
 
 ### Admin & Export
 
@@ -703,6 +741,7 @@ The `value` field is a number for all numeric fields, or a JSON array of team nu
 | `bracket_update` | `BracketMatch[]` | Bracket initialized or winner recorded |
 | `queue_update` | `QueueState` | On connection, match state changes |
 | `full_reset` | `{}` | Admin reset |
+| `team_cards_update` | `Object[]` from `getOutstandingCards` | A card is issued, undone in its origin match, deleted via `DELETE /api/team-cards/...`, or cleared by `POST /api/bracket/init` |
 
 ### Client -> Server
 
@@ -832,10 +871,12 @@ Detailed rankings with expandable per-match RP breakdown. Top 3 with gold/silver
 Horizontal scrolling bracket grouped by round, in chronological slot order (rounds appear in first-seen order from `getBracket()`'s row order, not re-sorted by round-name text — round labels like `WB-Final`/`Grand-Final` have no digits to sort by). Match cards show resolved alliance labels (e.g. `A3 (500, 600)`) once a roster is known, scores, and a winner badge. Live updates via `bracket_update`.
 
 ### `admin.html` — Admin Panel
-10-tab interface: Teams (add/import/delete), Scoring Values (12 point values), Ranking Points (RP thresholds), Periods (CRUD with reorder), Schedule (generate/export), Matches (score/penalty overrides), PINs (edit all credentials), Playoffs, Notes, Access, Reset (full wipe with confirmation).
+11-tab interface: Teams (add/import/delete), Scoring Values (12 point values), Ranking Points (RP thresholds), Periods (CRUD with reorder), Schedule (generate/export), Matches (score/penalty overrides), PINs (edit all credentials), Playoffs, Cards, Notes, Access, Reset (full wipe with confirmation).
 
 **Access tab:** a "Scan to Join" QR code, generated client-side with the same `/js/qrcode.js` library `display.html` uses (no external service — works fully offline on the local network). Fetches `GET /api/network-info` and encodes the first detected LAN URL, so refs/organizers can scan it with a phone to land on `/` and pick their role. Falls back to `location.origin` if no LAN interface is detected, and lists every detected URL as text below the code.
 
-**Playoffs tab:** Alliance Selection — one row per alliance (row count follows `getAllianceCount(teamCount)`, refreshed whenever team data loads), each with captain/partner team-number inputs saved via `POST /api/alliances`. **Bracket Matches** — one row per `bracket_matches` slot, showing its round/slot label; red/blue `<select>` dropdowns offer the base seed numbers plus a "Winner of X" / "Loser of X" option for every bracket match that already has a recorded winner (so a slot can be filled without the admin needing to know the official topology by heart) — selecting one calls `POST /api/bracket/matches/:id/assign` and then locks (the select is disabled once the slot's match has been created). Once both sides are assigned, a **Create Match** button calls `POST /api/bracket/matches/:id/create-match`, after which the row shows the match info and a winner badge once committed (or, if the match is `COMPLETED` with no recorded winner — a tie — manual **Set RED/BLUE winner** buttons calling `/winner` as a fallback). Live updates via `bracket_update`.
+**Playoffs tab:** Alliance Selection — one row per alliance (row count follows `getAllianceCount(teamCount)`, refreshed whenever team data loads), each with captain/partner team-number inputs saved via `POST /api/alliances`. **Bracket Matches** — one row per `bracket_matches` slot, showing its round/slot label; red/blue `<select>` dropdowns offer the base seed numbers plus a "Winner of X" / "Loser of X" option for every bracket match that already has a recorded winner (so a slot can be filled without the admin needing to know the official topology by heart) — selecting one calls `POST /api/bracket/matches/:id/assign` and then locks (the select is disabled once the slot's match has been created). Once both sides are assigned, a **Create Match** button calls `POST /api/bracket/matches/:id/create-match`, after which the row shows the match info and a winner badge once committed (or, if the match is `COMPLETED` with no recorded winner — a tie — manual **Set RED/BLUE winner** buttons calling `/winner` as a fallback). Live updates via `bracket_update`. Initializing the bracket also clears any quals-phase carried-over cards (see Cards tab).
+
+**Cards tab:** lists every currently-outstanding (carried-over) yellow/red card — team, card type, phase, and which match it originated in — with a **Delete** button per entry that calls `DELETE /api/team-cards/:teamNumber/:cardType` to stop it from carrying into that team's future matches. Live-synced via `team_cards_update`. See the `team_cards` table and `getEffectiveCards()` above for how carrying-over works.
 
 **Notes tab:** full add/search/edit/delete access to the same notes system as `headref.html`'s Notes tab (same match-list-then-detail browser), kept live-synced via Socket.io. Unlike the head-ref view (which always targets the currently-loaded match), admin has a match picker dropdown (any qualification/playoff match) since there's no "current match" context here — selecting a match repopulates the team picker (General + that match's 4 teams) for the Add Note form.

@@ -215,6 +215,22 @@ function initSchema(db) {
       UNIQUE(match_id, alliance, category)
     )
   `);
+
+  // Outstanding yellow/red cards that carry forward from match to match within
+  // a phase (quals or playoffs) until deleted. See getEffectiveCards() below —
+  // these are merged with each match's own match_scores cards at read time,
+  // never written into match_scores directly.
+  runSchema(db, `
+    CREATE TABLE IF NOT EXISTS team_cards (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      team_number INTEGER NOT NULL,
+      card_type TEXT NOT NULL CHECK(card_type IN ('yellow','red')),
+      phase TEXT NOT NULL CHECK(phase IN ('quals','playoffs')),
+      origin_match_id INTEGER REFERENCES matches(id),
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      UNIQUE(team_number, phase, card_type)
+    )
+  `);
 }
 
 const DEFAULT_SETTINGS = {
@@ -331,7 +347,13 @@ function ensureMatchScores(db, matchId) {
 function getFullScore(db, matchId, alliance) {
   const pv = getPointValues(db);
   const scores = db.prepare('SELECT * FROM match_scores WHERE match_id=? AND alliance=?').get(matchId, alliance);
-  if (!scores) return { total: 0, breakdown: {}, raw: null, cycles: [], yellow_cards: [], red_cards: [] };
+  if (!scores) {
+    return {
+      total: 0, breakdown: {}, raw: null, cycles: [],
+      yellow_cards: getEffectiveCards(db, matchId, alliance, 'yellow'),
+      red_cards: getEffectiveCards(db, matchId, alliance, 'red'),
+    };
+  }
 
   const cycles = db.prepare('SELECT * FROM endgame_cycles WHERE match_id=? AND alliance=?').all(matchId, alliance);
   const opp = alliance === 'red' ? 'blue' : 'red';
@@ -413,20 +435,89 @@ function getFullScore(db, matchId, alliance) {
     },
     raw: scores,
     cycles,
-    yellow_cards: JSON.parse(scores.yellow_cards || '[]'),
-    red_cards: JSON.parse(scores.red_cards || '[]'),
+    yellow_cards: getEffectiveCards(db, matchId, alliance, 'yellow'),
+    red_cards: getEffectiveCards(db, matchId, alliance, 'red'),
   };
 }
 
 /**
- * True when an alliance has any red card recorded in match_scores.red_cards
- * for this match (any one team is enough — per the SEC Game Manual, a single
- * confirmed red card ends the match immediately). Used to force an early
- * match end and to auto-grant the opposing alliance's full RP.
+ * Effective cards for an alliance in a match = cards issued directly in this
+ * match (match_scores.<field>) unioned with each team's outstanding carried
+ * card for the match's phase (team_cards). Carried cards are never written
+ * into match_scores — they're merged here at read time, so deleting a
+ * team_cards row (playoff reset, or a manual delete) takes effect everywhere
+ * on the next read without touching any historical match row.
+ */
+function getEffectiveCards(db, matchId, alliance, cardType) {
+  const field = cardType === 'red' ? 'red_cards' : 'yellow_cards';
+  const match = db.prepare('SELECT phase, red1, red2, blue1, blue2 FROM matches WHERE id=?').get(matchId);
+  if (!match) return [];
+
+  const row = db.prepare(`SELECT ${field} FROM match_scores WHERE match_id=? AND alliance=?`).get(matchId, alliance);
+  const cards = new Set(JSON.parse(row?.[field] || '[]'));
+
+  const teamIds = alliance === 'red' ? [match.red1, match.red2] : [match.blue1, match.blue2];
+  for (const teamId of teamIds) {
+    if (!teamId) continue;
+    const team = db.prepare('SELECT number FROM teams WHERE id=?').get(teamId);
+    if (!team) continue;
+    const outstanding = db.prepare(
+      'SELECT 1 FROM team_cards WHERE team_number=? AND phase=? AND card_type=?'
+    ).get(team.number, match.phase, cardType);
+    if (outstanding) cards.add(team.number);
+  }
+  return Array.from(cards);
+}
+
+/**
+ * True when an alliance has any effective red card (issued in this match, or
+ * carried in from an earlier match in the same phase) — any one team is
+ * enough, per the SEC Game Manual: a single confirmed red card ends the
+ * match immediately. Used to force an early match end and to auto-grant the
+ * opposing alliance's full RP.
  */
 function isAllianceRedCarded(db, matchId, alliance) {
-  const row = db.prepare('SELECT red_cards FROM match_scores WHERE match_id=? AND alliance=?').get(matchId, alliance);
-  return JSON.parse(row?.red_cards || '[]').length > 0;
+  return getEffectiveCards(db, matchId, alliance, 'red').length > 0;
+}
+
+// Records a card as outstanding so it carries into the team's future matches
+// within the same phase until deleted. No-ops if already outstanding
+// (a team can only carry one open yellow and one open red per phase).
+function addOutstandingCard(db, matchId, teamNumber, cardType) {
+  if (teamNumber == null) return;
+  const match = db.prepare('SELECT phase FROM matches WHERE id=?').get(matchId);
+  const phase = match && match.phase === 'playoffs' ? 'playoffs' : 'quals';
+  db.prepare(`
+    INSERT INTO team_cards(team_number, card_type, phase, origin_match_id)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(team_number, phase, card_type) DO NOTHING
+  `).run(teamNumber, cardType, phase, matchId);
+}
+
+// Undoing a card in the same match it was issued in shouldn't leave a
+// phantom outstanding record — only clears it if this match is the origin,
+// so undoing a carried-in card here (issued in an earlier match) is a no-op.
+function clearOutstandingCardIfOrigin(db, matchId, teamNumber, cardType) {
+  db.prepare(
+    'DELETE FROM team_cards WHERE origin_match_id=? AND team_number=? AND card_type=?'
+  ).run(matchId, teamNumber, cardType);
+}
+
+// Explicit admin action: stop a card from carrying forward at all, regardless
+// of which match it originated in.
+function deleteOutstandingCard(db, teamNumber, cardType) {
+  db.prepare('DELETE FROM team_cards WHERE team_number=? AND card_type=?').run(teamNumber, cardType);
+}
+
+function getOutstandingCards(db) {
+  return db.prepare(`
+    SELECT tc.id, tc.team_number, tc.card_type, tc.phase, tc.origin_match_id,
+           tc.created_at, t.name AS team_name, m.match_number AS origin_match_number
+    FROM team_cards tc
+    LEFT JOIN teams t ON t.number = tc.team_number
+    LEFT JOIN matches m ON m.id = tc.origin_match_id
+    ORDER BY tc.created_at DESC
+  `).all();
 }
 
 module.exports = {
@@ -436,5 +527,10 @@ module.exports = {
   expandPeriods,
   ensureMatchScores,
   getFullScore,
+  getEffectiveCards,
   isAllianceRedCarded,
+  addOutstandingCard,
+  clearOutstandingCardIfOrigin,
+  deleteOutstandingCard,
+  getOutstandingCards,
 };

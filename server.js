@@ -10,7 +10,10 @@ const cookieParser = require('cookie-parser');
 const path = require('path');
 
 const SqliteSessionStore = require('./session-store');
-const { getDb, getSettingsMap, getPointValues, expandPeriods, ensureMatchScores, getFullScore } = require('./db');
+const {
+  getDb, getSettingsMap, getPointValues, expandPeriods, ensureMatchScores, getFullScore,
+  isAllianceRedCarded, addOutstandingCard, clearOutstandingCardIfOrigin, deleteOutstandingCard, getOutstandingCards,
+} = require('./db');
 const { MatchTimer } = require('./timer');
 const { calculateScore, computeLiveRP, getRpOverrides, updateRankings } = require('./scoring');
 const { generateSchedule } = require('./scheduler');
@@ -276,6 +279,14 @@ app.post('/api/matches/:id/load', (req, res) => {
   const periods = expandPeriods(periodRows);
   timer.load(matchId, periods);
 
+  // A team carrying a red card into this match (from an earlier match in the
+  // same phase — see getEffectiveCards in db.js) gets the same treatment as
+  // a card issued live: the match ends immediately, scores stand as-is for
+  // review/commit.
+  if (isAllianceRedCarded(db, matchId, 'red') || isAllianceRedCarded(db, matchId, 'blue')) {
+    timer.forceEnd();
+  }
+
   // Broadcast to all clients that a new match is now loaded
   io.emit('match_loaded', { matchId, match: matchWithTeams(match) });
   io.emit('motif_update', { matchId, motif: match.motif || null });
@@ -463,6 +474,31 @@ app.delete('/api/notes/:id', (req, res) => {
   const id = Number(req.params.id);
   db.prepare('DELETE FROM notes WHERE id=?').run(id);
   io.emit('note_removed', { id });
+  res.json({ ok: true });
+});
+
+// ─── Outstanding (carried-over) cards API ──────────────────────────────────────
+
+app.get('/api/team-cards', (_req, res) => {
+  res.json(getOutstandingCards(db));
+});
+
+// Stops a card from carrying forward at all — does not touch the historical
+// per-match penalty/card record it originated from, only the outstanding
+// carry-forward row (see clearOutstandingCardIfOrigin vs deleteOutstandingCard
+// in db.js).
+app.delete('/api/team-cards/:teamNumber/:cardType', (req, res) => {
+  const teamNumber = Number(req.params.teamNumber);
+  const cardType = req.params.cardType;
+  if (!['yellow', 'red'].includes(cardType)) return res.status(400).json({ error: 'Invalid card type' });
+
+  deleteOutstandingCard(db, teamNumber, cardType);
+  io.emit('team_cards_update', getOutstandingCards(db));
+
+  // If this team is in the currently-loaded match, its live score display
+  // (which merges in outstanding cards) needs to drop the card immediately.
+  if (timer.matchId) broadcastScores(timer.matchId);
+
   res.json({ ok: true });
 });
 
@@ -736,6 +772,13 @@ app.post('/api/bracket/init', (req, res) => {
   const teams = db.prepare('SELECT COUNT(*) as c FROM teams').get();
   const count = getAllianceCount(teams.c);
   initBracket(db, count);
+
+  // Playoffs starting wipes any cards carried over from quals — playoff
+  // cards then carry forward independently within playoffs (see
+  // getEffectiveCards in db.js).
+  db.prepare("DELETE FROM team_cards WHERE phase='quals'").run();
+  io.emit('team_cards_update', getOutstandingCards(db));
+
   io.emit('bracket_update', getBracket(db));
   res.json({ ok: true, allianceCount: count });
 });
@@ -862,6 +905,7 @@ app.post('/api/admin/reset', (req, res) => {
   db.prepare('DELETE FROM alliance_selections').run();
   db.prepare('DELETE FROM notes').run();
   db.prepare('DELETE FROM rp_overrides').run();
+  db.prepare('DELETE FROM team_cards').run();
   db.prepare('DELETE FROM matches').run();
   db.prepare('DELETE FROM teams').run();
 
@@ -953,7 +997,11 @@ function buildResultsPayload(matchId) {
 // ── Card sync (match_scores.yellow_cards / red_cards) ─────────────────────────
 // Keeps the alliance-level card arrays (used for DQ/RP detection) in sync with
 // whichever team a card was issued to or rescinded from via the unified
-// 'penalty' / 'remove_penalty' events.
+// 'penalty' / 'remove_penalty' events. Also records/clears the team_cards
+// outstanding-card row so the card carries into the team's future matches
+// within the same phase (see getEffectiveCards in db.js) until it's either
+// undone here in the same match or explicitly deleted via
+// DELETE /api/team-cards/:teamNumber/:cardType.
 
 function addCardToMatchScores(matchId, alliance, cardType, teamNumber) {
   if (teamNumber == null) return;
@@ -962,6 +1010,8 @@ function addCardToMatchScores(matchId, alliance, cardType, teamNumber) {
   const cards = JSON.parse(row?.[field] || '[]');
   if (!cards.includes(teamNumber)) cards.push(teamNumber);
   db.prepare(`UPDATE match_scores SET ${field}=? WHERE match_id=? AND alliance=?`).run(JSON.stringify(cards), matchId, alliance);
+  addOutstandingCard(db, matchId, teamNumber, cardType);
+  io.emit('team_cards_update', getOutstandingCards(db));
 }
 
 function removeCardFromMatchScores(matchId, alliance, cardType, teamNumber) {
@@ -970,6 +1020,8 @@ function removeCardFromMatchScores(matchId, alliance, cardType, teamNumber) {
   const row = db.prepare(`SELECT ${field} FROM match_scores WHERE match_id=? AND alliance=?`).get(matchId, alliance);
   const cards = JSON.parse(row?.[field] || '[]').filter(n => n !== teamNumber);
   db.prepare(`UPDATE match_scores SET ${field}=? WHERE match_id=? AND alliance=?`).run(JSON.stringify(cards), matchId, alliance);
+  clearOutstandingCardIfOrigin(db, matchId, teamNumber, cardType);
+  io.emit('team_cards_update', getOutstandingCards(db));
 }
 
 function broadcastScores(matchId) {

@@ -115,6 +115,7 @@
       { id: 'matches',  label: 'Matches' },
       { id: 'pins',     label: 'PINs' },
       { id: 'playoffs', label: 'Playoffs' },
+      { id: 'cards',    label: 'Cards' },
       { id: 'notes',    label: 'Notes' },
       { id: 'access',   label: 'Access' },
       { id: 'reset',    label: 'Reset' },
@@ -148,6 +149,7 @@
       buildMatchesTab();
       buildPinsTab();
       buildPlayoffsTab();
+      buildCardsTab();
       buildNotesTab();
       buildAccessTab();
       buildResetTab();
@@ -1435,6 +1437,104 @@
 
       row.appendChild(actionSlot);
       return row;
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // CARDS TAB — outstanding yellow/red cards carried forward across matches
+    // within a phase (see team_cards in db.js). Deleting one here is the only
+    // way to stop it from carrying into that team's future matches.
+    // ════════════════════════════════════════════════════════════════════════════
+    var gTeamCards = [];
+    var cardsListEl;
+
+    function buildCardsTab() {
+      var p = panels.cards;
+
+      var section = makeAdminSection('Outstanding Cards');
+
+      var hint = document.createElement('div');
+      hint.style.cssText = 'color:var(--text2);font-size:0.85rem;margin-bottom:0.75rem;';
+      hint.textContent = 'A card issued to a team carries into all of that team’s future matches within the same phase (quals/playoffs) until deleted here. Playoffs starting automatically clears any quals cards. Deleting a card does not undo it in the match it was issued in — it only stops it from carrying forward.';
+      section.appendChild(hint);
+
+      cardsListEl = document.createElement('div');
+      cardsListEl.className = 'notes-list';
+      section.appendChild(cardsListEl);
+
+      p.appendChild(section);
+
+      fetchTeamCards();
+      connectCardsSocket();
+    }
+
+    function fetchTeamCards() {
+      fetch('/api/team-cards')
+        .then(function (r) { return r.json(); })
+        .then(function (cards) { gTeamCards = cards || []; renderCardsList(); })
+        .catch(function () {});
+    }
+
+    function connectCardsSocket() {
+      var sock = SK.connectSocket();
+      if (!sock) return;
+      sock.on('team_cards_update', function (cards) {
+        gTeamCards = cards || [];
+        renderCardsList();
+      });
+    }
+
+    function renderCardsList() {
+      if (!cardsListEl) return;
+      while (cardsListEl.firstChild) cardsListEl.removeChild(cardsListEl.firstChild);
+
+      if (!gTeamCards.length) {
+        var empty = document.createElement('div');
+        empty.className = 'note-empty';
+        empty.textContent = 'No outstanding cards.';
+        cardsListEl.appendChild(empty);
+        return;
+      }
+
+      gTeamCards.forEach(function (card) {
+        var item = document.createElement('div');
+        item.className = 'note-item';
+
+        var header = document.createElement('div');
+        header.className = 'note-item-header';
+
+        var badge = document.createElement('span');
+        badge.className = 'note-item-team ' + (card.card_type === 'red' ? 'red' : 'general');
+        badge.style.color = card.card_type === 'red' ? 'var(--red-light)' : 'var(--yellow)';
+        badge.textContent = (card.card_type === 'red' ? 'RED' : 'YELLOW') + ' — Team ' + card.team_number
+          + (card.team_name ? ' (' + card.team_name + ')' : '');
+        header.appendChild(badge);
+
+        var phaseEl = document.createElement('span');
+        phaseEl.className = 'note-item-match';
+        phaseEl.textContent = (card.phase === 'playoffs' ? 'Playoffs' : 'Quals')
+          + (card.origin_match_number ? ' · carried from Match ' + card.origin_match_number : '');
+        header.appendChild(phaseEl);
+
+        item.appendChild(header);
+
+        var actions = document.createElement('div');
+        actions.className = 'note-item-actions';
+        var delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'note-del';
+        delBtn.textContent = 'Delete';
+        delBtn.addEventListener('click', function () {
+          if (!confirm('Stop this card from carrying forward to ' + card.team_number + '’s future matches?')) return;
+          fetch('/api/team-cards/' + card.team_number + '/' + card.card_type, { method: 'DELETE' })
+            .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+            .then(function () { showToast('Card cleared', 'info'); })
+            .catch(function () { showToast('Failed to clear card', 'error'); });
+        });
+        actions.appendChild(delBtn);
+        item.appendChild(actions);
+
+        cardsListEl.appendChild(item);
+      });
     }
 
     // ════════════════════════════════════════════════════════════════════════════
