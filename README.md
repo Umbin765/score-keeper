@@ -31,7 +31,7 @@ db.js              SQLite schema, migrations, query helpers
 timer.js           Server-side match timer state machine
 scoring.js         Score calculation, RP computation, rankings engine
 scheduler.js       Round-robin schedule generator (circle method)
-bracket.js         Double-elimination bracket templates (4/6/8 alliances)
+bracket.js         Single-elimination playoff bracket (fixed 4 alliances: semis + final)
 public/js/common.js  Shared client utilities (PIN pad, timer, toasts, buzzer)
 public/js/qrcode.js  Vendored qrcode-generator (offline QR on results screen)
 public/css/style.css Global dark-theme design system (tokens, fonts, components)
@@ -540,18 +540,11 @@ Returns `[{ match_number, red1, red2, blue1, blue2 }]` where values are team IDs
 
 ### `bracket.js` — Playoff Bracket
 
-#### `getAllianceCount(teamCount) -> 4|6|8`
-Determines alliance count: >= 24 teams returns 8, >= 18 returns 6, otherwise 4.
+#### `getAllianceCount(teamCount) -> 4`
+Always returns 4 — the playoff bracket is a fixed 4-alliance format regardless of how many teams are registered. `teamCount` is accepted but unused (kept so call sites don't need to change).
 
 #### `initBracket(db, allianceCount) -> void`
-Clears existing `bracket_matches` and inserts pre-seeded double-elimination bracket slots.
-
-**Bracket sizes:**
-- **4 alliances:** 6 matches (WB-R1 x2, WB-Final, LB-R1, LB-Final, Grand-Final)
-- **6 alliances:** 11 matches (includes WB-R2 byes)
-- **8 alliances:** 15 matches (WB-R1 x4, WB-SF x2, WB-Final, LB-R1 x2, LB-R2 x2, LB-SF x2, LB-Final, Grand-Final)
-
-Standard seedings: 1v8, 4v5, 2v7, 3v6 for 8-alliance.
+Clears existing `bracket_matches` and inserts the fixed 4-alliance single-elimination bracket: 3 matches total — **Semifinal #1** (A1 v A4), **Semifinal #2** (A2 v A3), and **Final** (winner of SF1 v winner of SF2, slots left empty until assigned). `allianceCount` is accepted but unused.
 
 #### `getAllianceRoster(db, allianceNumber) -> Object|null`
 Resolves an alliance number to its captain/partner team ids and numbers via `alliance_selections` (joined with `teams`). Returns `null` if the alliance has no selection saved yet.
@@ -560,10 +553,10 @@ Resolves an alliance number to its captain/partner team ids and numbers via `all
 Formats a display label for an alliance, e.g. `"A3 (500, 600)"` if a roster is known, or `"Alliance 3"` if not. Returns `null` if `allianceNumber` is `null` (slot not yet filled).
 
 #### `getBracket(db) -> Object[]`
-Returns all `bracket_matches` rows (ordered by `bm.id`, which already matches the chronological round sequence each `bracketN()` slot list was built in — callers should preserve this order rather than re-sorting by round-name text, since names like `WB-Final`/`LB-SF`/`Grand-Final` have no digits to sort by) joined with match state. Each row includes both the raw snake_case fields (`red_alliance`, `blue_alliance`, `winner_alliance`, `bracket_round` — used by the admin bracket-management UI and `public.html`) and display-ready camelCase fields (`redAlliance`, `blueAlliance`, `matchNumber`, `redScore`, `blueScore`, `winner` — used by `bracket.html`), the latter built from `getAllianceRoster`/`formatAllianceLabel` and `getFullScore`.
+Returns all `bracket_matches` rows (ordered by `bm.id`, which already matches the chronological round sequence — Semifinal #1, Semifinal #2, Final — callers should preserve this order rather than re-sorting by round-name text) joined with match state. Each row includes both the raw snake_case fields (`red_alliance`, `blue_alliance`, `winner_alliance`, `bracket_round` — used by the admin bracket-management UI and `public.html`) and display-ready camelCase fields (`redAlliance`, `blueAlliance`, `matchNumber`, `redScore`, `blueScore`, `winner` — used by `bracket.html`), the latter built from `getAllianceRoster`/`formatAllianceLabel` and `getFullScore`.
 
 #### `advanceBracket(db, bracketMatchId, winnerAlliance) -> void`
-Records the winner of a bracket match (`winner_alliance` column only). **Does not auto-advance** the winner/loser into the next round's slot — see `POST /api/bracket/matches/:id/assign` below, which the admin "Bracket Matches" UI uses to route a recorded winner/loser into the next round's red/blue slot. This is deliberate: the exact winners/losers-bracket topology differs across 4/6/8-alliance formats, and is guided by the admin (following the printed bracket) rather than a hard-coded graph, to avoid silently mis-routing a live elimination bracket.
+Records the winner of a bracket match (`winner_alliance` column only). **Does not auto-advance** the winner into the Final's slot — see `POST /api/bracket/matches/:id/assign` below, which the admin "Bracket Matches" UI uses to route a recorded semifinal winner into the Final's red/blue side. Kept manual (rather than hard-coded) so the admin stays in control of a live elimination bracket.
 
 ---
 
@@ -868,14 +861,14 @@ Mobile-first bottom-tab SPA. Three tabs: **Rankings** (default) shows a 9-column
 Detailed rankings with expandable per-match RP breakdown. Top 3 with gold/silver/bronze coloring. CSV export button. Live updates.
 
 ### `bracket.html` — Playoff Bracket
-Horizontal scrolling bracket grouped by round, in chronological slot order (rounds appear in first-seen order from `getBracket()`'s row order, not re-sorted by round-name text — round labels like `WB-Final`/`Grand-Final` have no digits to sort by). Match cards show resolved alliance labels (e.g. `A3 (500, 600)`) once a roster is known, scores, and a winner badge. Live updates via `bracket_update`.
+Horizontal scrolling bracket grouped by round, in chronological slot order (rounds appear in first-seen order from `getBracket()`'s row order: Semifinal, then Final). Match cards show resolved alliance labels (e.g. `A3 (500, 600)`) once a roster is known, scores, and a winner badge. Live updates via `bracket_update`.
 
 ### `admin.html` — Admin Panel
 11-tab interface: Teams (add/import/delete), Scoring Values (12 point values), Ranking Points (RP thresholds), Periods (CRUD with reorder), Schedule (generate/export), Matches (score/penalty overrides), PINs (edit all credentials), Playoffs, Cards, Notes, Access, Reset (full wipe with confirmation).
 
 **Access tab:** a "Scan to Join" QR code, generated client-side with the same `/js/qrcode.js` library `display.html` uses (no external service — works fully offline on the local network). Fetches `GET /api/network-info` and encodes the first detected LAN URL, so refs/organizers can scan it with a phone to land on `/` and pick their role. Falls back to `location.origin` if no LAN interface is detected, and lists every detected URL as text below the code.
 
-**Playoffs tab:** Alliance Selection — one row per alliance (row count follows `getAllianceCount(teamCount)`, refreshed whenever team data loads), each with captain/partner team-number inputs saved via `POST /api/alliances`. **Bracket Matches** — one row per `bracket_matches` slot, showing its round/slot label; red/blue `<select>` dropdowns offer the base seed numbers plus a "Winner of X" / "Loser of X" option for every bracket match that already has a recorded winner (so a slot can be filled without the admin needing to know the official topology by heart) — selecting one calls `POST /api/bracket/matches/:id/assign` and then locks (the select is disabled once the slot's match has been created). Once both sides are assigned, a **Create Match** button calls `POST /api/bracket/matches/:id/create-match`, after which the row shows the match info and a winner badge once committed (or, if the match is `COMPLETED` with no recorded winner — a tie — manual **Set RED/BLUE winner** buttons calling `/winner` as a fallback). Live updates via `bracket_update`. Initializing the bracket also clears any quals-phase carried-over cards (see Cards tab).
+**Playoffs tab:** Alliance Selection — always 4 rows (one per alliance), each with captain/partner team-number inputs saved via `POST /api/alliances`. **Bracket Matches** — one row per `bracket_matches` slot (Semifinal #1, Semifinal #2, Final), showing its round/slot label; red/blue `<select>` dropdowns offer the 4 base seed numbers plus a "Winner of X" option for either semifinal once it has a recorded result (so the Final can be filled without the admin needing to track it by hand) — selecting one calls `POST /api/bracket/matches/:id/assign` and then locks (the select is disabled once the slot's match has been created). Once both sides are assigned, a **Create Match** button calls `POST /api/bracket/matches/:id/create-match`, after which the row shows the match info and a winner badge once committed (or, if the match is `COMPLETED` with no recorded winner — a tie — manual **Set RED/BLUE winner** buttons calling `/winner` as a fallback). Live updates via `bracket_update`. Initializing the bracket also clears any quals-phase carried-over cards (see Cards tab).
 
 **Cards tab:** lists every currently-outstanding (carried-over) yellow/red card — team, card type, phase, and which match it originated in — with a **Delete** button per entry that calls `DELETE /api/team-cards/:teamNumber/:cardType` to stop it from carrying into that team's future matches. Live-synced via `team_cards_update`. See the `team_cards` table and `getEffectiveCards()` above for how carrying-over works.
 

@@ -1,40 +1,30 @@
 'use strict';
 
 /**
- * Double-elimination bracket logic.
+ * Single-elimination, fixed 4-alliance playoff bracket.
  *
- * Alliance count is determined from team count:
- *   >= 24 teams → 8 alliances
- *   >= 18 teams → 6 alliances
- *   <  18 teams → 4 alliances
+ * Always exactly 4 alliances: Semifinal 1 (A1 v A4), Semifinal 2 (A2 v A3),
+ * then Final (winner of SF1 v winner of SF2). No losers bracket.
  *
  * The bracket is stored as a list of matches in bracket_matches table.
  * Each match has: bracket_round (string label), bracket_slot (integer),
  * red_alliance, blue_alliance, winner_alliance.
- *
- * We use a standard double-elimination structure:
- *   Winners Bracket (WB) and Losers Bracket (LB) with a Grand Final.
- *
- * For simplicity, we pre-generate all bracket slots at the start of playoffs
- * and fill in participants as winners/losers advance.
  */
 
-function getAllianceCount(teamCount) {
-  if (teamCount >= 24) return 8;
-  if (teamCount >= 18) return 6;
+function getAllianceCount(_teamCount) {
   return 4;
 }
 
 /**
- * Initialize the bracket for a given number of alliances.
- * Returns the initial bracket_matches rows (without match_ids).
- * This supports 4, 6, or 8 alliances.
+ * Initialize the bracket. Returns the initial bracket_matches rows
+ * (without match_ids). Always builds the fixed 4-alliance semifinal+final
+ * bracket regardless of team count.
  */
-function initBracket(db, allianceCount) {
+function initBracket(db, _allianceCount) {
   // Clear existing bracket
   db.prepare('DELETE FROM bracket_matches').run();
 
-  const slots = buildBracketSlots(allianceCount);
+  const slots = buildBracketSlots();
   const insert = db.prepare(`
     INSERT INTO bracket_matches(bracket_round, bracket_slot, red_alliance, blue_alliance)
     VALUES (?, ?, ?, ?)
@@ -44,64 +34,14 @@ function initBracket(db, allianceCount) {
   }
 }
 
-/**
- * Pre-seeded bracket slot definitions for 4, 6, 8 alliances.
- * Seeds are 1-based alliance numbers from alliance_selections.
- */
-function buildBracketSlots(n) {
-  if (n === 4) return bracket4();
-  if (n === 6) return bracket6();
-  return bracket8();
-}
-
-// 4-alliance double elimination: WB has 2 matches in R1, final 1, LB has 2 + 1 matches.
-// WB-R1: 1v4, 2v3 | WB-Final: winners | LB-R1: losers cross | LB-Final: LB-R1 winners | Grand Final
-function bracket4() {
+// Fixed 4-alliance single elimination: SF1 (1v4), SF2 (2v3), Final (winners
+// of SF1/SF2, assigned manually via /api/bracket/matches/:id/assign once
+// each semifinal is decided).
+function buildBracketSlots() {
   return [
-    { round: 'WB-R1', slot: 1, red: 1, blue: 4 },
-    { round: 'WB-R1', slot: 2, red: 2, blue: 3 },
-    { round: 'WB-Final', slot: 1, red: null, blue: null },
-    { round: 'LB-R1', slot: 1, red: null, blue: null },
-    { round: 'LB-Final', slot: 1, red: null, blue: null },
-    { round: 'Grand-Final', slot: 1, red: null, blue: null },
-  ];
-}
-
-// 6-alliance: byes for top 2 seeds in WB-R1
-function bracket6() {
-  return [
-    { round: 'WB-R1', slot: 1, red: 3, blue: 6 },
-    { round: 'WB-R1', slot: 2, red: 4, blue: 5 },
-    { round: 'WB-R2', slot: 1, red: 1, blue: null }, // 1 vs winner of WB-R1-1
-    { round: 'WB-R2', slot: 2, red: 2, blue: null }, // 2 vs winner of WB-R1-2
-    { round: 'WB-Final', slot: 1, red: null, blue: null },
-    { round: 'LB-R1', slot: 1, red: null, blue: null }, // losers of WB-R1
-    { round: 'LB-R2', slot: 1, red: null, blue: null }, // WB-R2 losers vs LB-R1 winner
-    { round: 'LB-R2', slot: 2, red: null, blue: null },
-    { round: 'LB-SF',  slot: 1, red: null, blue: null },
-    { round: 'LB-Final', slot: 1, red: null, blue: null },
-    { round: 'Grand-Final', slot: 1, red: null, blue: null },
-  ];
-}
-
-// 8-alliance double elimination: standard seeding
-function bracket8() {
-  return [
-    { round: 'WB-R1', slot: 1, red: 1, blue: 8 },
-    { round: 'WB-R1', slot: 2, red: 4, blue: 5 },
-    { round: 'WB-R1', slot: 3, red: 2, blue: 7 },
-    { round: 'WB-R1', slot: 4, red: 3, blue: 6 },
-    { round: 'WB-SF',  slot: 1, red: null, blue: null },
-    { round: 'WB-SF',  slot: 2, red: null, blue: null },
-    { round: 'WB-Final', slot: 1, red: null, blue: null },
-    { round: 'LB-R1', slot: 1, red: null, blue: null },
-    { round: 'LB-R1', slot: 2, red: null, blue: null },
-    { round: 'LB-R2', slot: 1, red: null, blue: null },
-    { round: 'LB-R2', slot: 2, red: null, blue: null },
-    { round: 'LB-SF',  slot: 1, red: null, blue: null },
-    { round: 'LB-SF',  slot: 2, red: null, blue: null },
-    { round: 'LB-Final', slot: 1, red: null, blue: null },
-    { round: 'Grand-Final', slot: 1, red: null, blue: null },
+    { round: 'Semifinal', slot: 1, red: 1, blue: 4 },
+    { round: 'Semifinal', slot: 2, red: 2, blue: 3 },
+    { round: 'Final', slot: 1, red: null, blue: null },
   ];
 }
 

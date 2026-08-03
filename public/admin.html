@@ -1168,10 +1168,8 @@
     var gBracket = [];
 
     // Mirrors bracket.js's getAllianceCount() thresholds.
-    function getAllianceCountClient(teamCount) {
-      if (teamCount >= 24) return 8;
-      if (teamCount >= 18) return 6;
-      return 4;
+    function getAllianceCountClient(_teamCount) {
+      return 4; // fixed 4-alliance single-elimination playoff bracket
     }
 
     function buildPlayoffsTab() {
